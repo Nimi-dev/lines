@@ -3,8 +3,16 @@
 // drop means the scripted move loses value vs best play. Flagged moves are
 // cross-checked against the Lichess masters database (--masters) before being
 // treated as errors: a common master move is book, not a blunder.
-// Usage: node tools/line-audit.mjs [--ms 2500] [--threshold 70] [--masters]
+// Usage: node tools/line-audit.mjs [--sf] [--depth 20] [--ms 2500] [--threshold 70] [--cloud] [--masters]
+//
+// Arbiters, strongest first — the first one available for a position wins:
+//   --sf     real Stockfish, run locally from the optional `stockfish` npm
+//            package (npm i -D stockfish). Deep, offline, no rate limit.
+//   --cloud  Lichess cloud Stockfish. Deeper still, but needs the network.
+//   (none)   the in-app engineCore — reaches ~depth 7 and is NOT an arbiter;
+//            it cleared 10.Qe4? at Δ40 that was −344cp at depth 23.
 import { loadApp } from "./_load.mjs";
+import { createRequire } from "node:module";
 
 const { engineCore, START, sq, posKey, toFEN, PACKS, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS } = await loadApp();
 const { REP, REPX } = buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]); // audit the FULL gauntlet-able tree
@@ -12,6 +20,7 @@ const { REP, REPX } = buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]); // a
 const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf("--" + name); return i >= 0 ? +args[i + 1] : dflt; };
 const MS = opt("ms", 2500), THRESHOLD = opt("threshold", 70), MASTERS = args.includes("--masters");
+const SF = args.includes("--sf"), DEPTH = opt("depth", 20);
 const CLOUD = args.includes("--cloud"); // arbitrate every position with Lichess cloud Stockfish (deep) — the local engine misses deep refutations (10.Qe4? was Δ40 "clear" locally and −344cp at depth 23)
 
 // Deliberate keeps: moves the engine scores a shade below its favourite that we
@@ -24,6 +33,54 @@ const KEEPS = [
   { packId: "declines", san: "8.Nc3", why: "prepares O-O-O+ developing a rook with check; engine's alternative is fractionally better and harder to teach" },
 ];
 const isKeep = (r) => KEEPS.find((k) => k.packId === r.packId && k.san === r.san);
+
+/* ---- local Stockfish arbiter (optional dependency, skipped when absent) ---- */
+const sfEngine = await (async () => {
+  if (!SF) return null;
+  try {
+    const require = createRequire(import.meta.url);
+    const initEngine = require("stockfish");
+    const engine = await initEngine("lite-single");
+    // Emscripten prints to stdout; intercept it rather than let it flood the log
+    const realWrite = process.stdout.write.bind(process.stdout);
+    let onLine = null;
+    // swallow engine chatter, let this tool's own output through
+    const isUci = (t) => /^(info\b|bestmove\b|Stockfish \d|id \w|option name|uciok|readyok)/.test(t.trimStart());
+    process.stdout.write = (chunk) => {
+      const t = String(chunk);
+      if (!isUci(t)) return realWrite(chunk);
+      if (onLine) onLine(t);
+      return true;
+    };
+    const evalFen = (fen) => new Promise((resolve) => {
+      let score = null;
+      onLine = (t) => {
+        const m = t.match(/^info .*\bdepth (\d+)\b.*\bscore (cp|mate) (-?\d+)/);
+        if (m && +m[1] >= DEPTH) score = m[2] === "mate" ? { mate: +m[3] } : { cp: +m[3] };
+        if (/^bestmove/.test(t)) resolve(score);
+      };
+      engine.sendCommand("ucinewgame");
+      engine.sendCommand("position fen " + fen);
+      engine.sendCommand("go depth " + DEPTH);
+    });
+    return {
+      // scores are side-to-move POV from UCI; the audit works in White POV
+      eval: async (fen) => {
+        const r = await evalFen(fen);
+        if (!r) return null;
+        const white = fen.split(/\s+/)[1] === "w" ? 1 : -1;
+        return r.mate != null ? { mate: r.mate * white } : { cp: r.cp * white };
+      },
+      close: () => { process.stdout.write = realWrite; },
+    };
+  } catch (e) {
+    console.error(`--sf requested but the stockfish package is unavailable (${e.message}).`);
+    console.error("Install it with:  npm i -D stockfish     (it is optional; the audit falls back to the weak local engine)");
+    process.exitCode = 1;
+    return null;
+  }
+})();
+if (SF && !sfEngine) process.exit(1);
 
 const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
 const cp = (r) => (r.mate != null ? (r.mate > 0 ? 30000 - r.mate : -30000 - r.mate) : r.cp);
@@ -67,7 +124,11 @@ for (const [key, pos] of seen) {
   const after = applyTok(pos.b, pos.m);
   const fenAfter = toFEN(after, [...pos.hist, pos.m], pos.k + 1);
   let evalBefore, evalAfter, src = "local";
-  if (CLOUD) {
+  if (sfEngine) {
+    const b = await sfEngine.eval(fenBefore), a = await sfEngine.eval(fenAfter);
+    if (b && a) { evalBefore = cp(b); evalAfter = cp(a); src = "sf d" + DEPTH; }
+  }
+  if (evalBefore == null && CLOUD) {
     const cb = await cloudEval(fenBefore, 3);
     if (cb) {
       evalBefore = cb.pvs[0].cp;
@@ -156,5 +217,6 @@ const clear = results.filter((r) => r.delta <= THRESHOLD);
 console.log(`\nclear: ${clear.length} | worst clear margins:`);
 for (const r of [...clear].sort((a, b) => b.delta - a.delta).slice(0, 8)) console.log(`  ${r.san} [${chip(r.packId)}] Δ${r.delta}cp (${r.src})`);
 const localOnly = results.filter((r) => r.src.startsWith("local"));
-if (!CLOUD) console.log(`\nNOTE: local engine only — it reaches depth ~7 here and systematically undervalues quiet structural moves.\nRun with --cloud (Lichess cloud Stockfish, depth 20+) before shipping any content change; it is the arbiter that caught 10.Qe4?.`);
+if (sfEngine) sfEngine.close();
+if (!CLOUD && !SF) console.log(`\nNOTE: local engine only — it reaches depth ~7 here and systematically undervalues quiet structural moves.\nRun with --cloud (Lichess cloud Stockfish, depth 20+) before shipping any content change; it is the arbiter that caught 10.Qe4?.`);
 if (CLOUD && localOnly.length) console.log(`cloud had no data for ${localOnly.length} position(s) (local fallback): ${localOnly.map((r) => r.san).join(", ")}`);
