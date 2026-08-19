@@ -92,6 +92,10 @@ const hasLegalRecapture = (fenAfter, targetSq) => {
    sacrifices whose compensation is tactical, verified by deep engine, and part
    of the pack's teaching. Every waiver must be exercised or the audit fails. */
 const SEE_WAIVERS = {
+  "hanham|7.Bxf7+!":
+    "Stockfish 18 d16: the engine's OWN top move at +1.68 — 7...Kxf7 is forced and 8.Qxd8 collects the queen. Static exchange cannot see a one-move-delayed regain. Waived 2026-08-19.",
+  "hanham|9.Qd2!":
+    "Stockfish 18 d16: top move at +1.74 and the only one that holds — the queen blocks the check and is offered back on White's terms (9.c3?? +0.01, 9.Bd2?? -0.02); after 9...Bxd2+, 10.Nxd2 +1.58. Waived 2026-08-19.",
   "qpawn|2...c5!":
     "SF d55: dead equal and SF's own top choice — the c5 pawn is only nominally capturable (3.dxc5 e6!/...Qa5+ regains it by force); one-move-delayed regains are beyond static exchange. Waived 2026-08-19.",
   "alien|6.Nxf7!!":
