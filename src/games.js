@@ -1,0 +1,208 @@
+/* Real-game analysis: walk chess.com games against the repertoire tree.
+   Pure logic — no fetch, no React — so tools/games-test.mjs can verify it.
+
+   Every 1.e4 game ends in exactly one bucket:
+   - "user":  you left book first (recall failure or pre-training habit)
+   - "opp":   the opponent left the tree (a coverage event, not a knowledge event)
+   - "done":  the game ran through a scripted line to its end (covered)
+   Coverage is conditioned on your positions: it asks how far the OPPONENT
+   stays scripted, estimated per opponent-node from your own games and
+   multiplied down the tree. */
+
+const clean = (s) => (s || "").replace(/^\d+\.+/, "").replace(/[!?]+$/, "").replace(/[+#]/g, "");
+
+/* PGN movetext -> SAN list (chess.com PGNs carry {[%clk]} comments) */
+export const sanList = (pgn) => {
+  const parts = (pgn || "").split(/\n\n/);
+  const mt = parts.length > 1 ? parts.slice(1).join("\n\n") : parts[0] || "";
+  return mt
+    .replace(/\{[^}]*\}/g, " ")
+    .replace(/\$\d+/g, " ")
+    .replace(/\b\d+\.(\.\.)?/g, " ")
+    .replace(/(1-0|0-1|1\/2-1\/2|\*)\s*$/, "")
+    .trim().split(/\s+/).filter(Boolean);
+};
+
+/* one game vs the tree; sans is the game's SAN list, from ply 0 */
+export const walkGame = (tree, sq, posKey, START, sans) => {
+  const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
+  let b = START.slice(), k = 0;
+  while (k < sans.length) {
+    const key = posKey(b, k % 2);
+    const gs = clean(sans[k]);
+    if (k % 2 === 0) {
+      const u = tree.REP.user[key];
+      if (!u) return { kind: "done", ply: k, key };
+      if (clean(u.san) !== gs) return { kind: "user", ply: k, key, expected: u.san, played: sans[k] };
+      b = applyTok(b, u.m);
+    } else {
+      const opp = (tree.REP.opp[key] || []).find((x) => clean(x.san) === gs);
+      if (!opp) {
+        if (!(tree.REP.opp[key] || []).length) return { kind: "done", ply: k, key };
+        return { kind: "opp", ply: k, key, played: sans[k] };
+      }
+      b = applyTok(b, opp.m);
+    }
+    k++;
+  }
+  return { kind: "done", ply: k, key: null, inBookAtEnd: true };
+};
+
+const isWin = (r) => r === "win";
+const isDraw = (r) => ["stalemate", "repetition", "agreed", "insufficient", "timevsinsufficient", "50move"].includes(r);
+export const scorePct = (games) => {
+  if (!games.length) return null;
+  const s = games.reduce((a, g) => a + (isWin(g.r) ? 1 : isDraw(g.r) ? 0.5 : 0), 0);
+  return Math.round((100 * s) / games.length);
+};
+
+/* node-product coverage: per opponent-node empirical stay-rate from the games
+   that reached it; thin nodes (n < minN) borrow the global scripted-stay rate. */
+export const analyzeGames = (tree, helpers, games, opts = {}) => {
+  const { sq, posKey, START } = helpers;
+  const minN = opts.minN || 8;
+  const recentMs = opts.now ? opts.now - 30 * 86400000 : Date.now() - 30 * 86400000;
+
+  const white = games.filter((g) => g.white);
+  const e4 = white.filter((g) => clean(g.s[0]) === "e4");
+
+  // walk every game; also log the opponent's reply at every opp-node reached
+  const nodeSeen = {}, nodeStay = {}, nodeLeaks = {}, nodePly = {}, nodeMove = {}; // key -> counts
+  const buckets = { user: [], opp: [], done: [] };
+  const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
+  for (const g of e4) {
+    // node stats: follow the game while the USER is in book; record opp replies
+    let b = START.slice(), k = 0;
+    while (k < g.s.length) {
+      const key = posKey(b, k % 2);
+      const gs = clean(g.s[k]);
+      if (k % 2 === 0) {
+        const u = tree.REP.user[key];
+        if (!u) break;
+        if (clean(u.san) !== gs) break; // conditioned on your positions: past your deviation the branch is unobservable
+        b = applyTok(b, u.m);
+      } else {
+        const entry = tree.REP.opp[key] || [];
+        if (!entry.length) break;
+        nodeSeen[key] = (nodeSeen[key] || 0) + 1; nodePly[key] = k;
+        const opp = entry.find((x) => clean(x.san) === gs);
+        if (!opp) {
+          nodeLeaks[key] = nodeLeaks[key] || {};
+          const lk = nodeLeaks[key][gs] = nodeLeaks[key][gs] || { n: 0, games: [] };
+          lk.n++; if (lk.games.length < 4) lk.games.push(g);
+          break;
+        }
+        nodeStay[key] = (nodeStay[key] || 0) + 1;
+        nodeMove[key] = nodeMove[key] || {};
+        nodeMove[key][gs] = (nodeMove[key][gs] || 0) + 1;
+        b = applyTok(b, opp.m);
+      }
+      k++;
+    }
+    const out = walkGame(tree, sq, posKey, START, g.s);
+    buckets[out.kind].push({ g, out });
+  }
+
+  // depth-aware prior: stay-rates rise with depth (an opponent five plies into
+  // book rarely leaves next move). A thin node at ply p borrows the aggregate
+  // stay of the deepest measurable ply <= p, never a shallower one's average.
+  const plyAgg = {}; // ply -> {stay, seen}
+  let thickStay = 0, thickSeen = 0;
+  for (const key of Object.keys(nodeSeen)) {
+    if (nodeSeen[key] < minN) continue;
+    const pl = nodePly[key];
+    plyAgg[pl] = plyAgg[pl] || { stay: 0, seen: 0 };
+    plyAgg[pl].stay += nodeStay[key] || 0; plyAgg[pl].seen += nodeSeen[key];
+    thickStay += nodeStay[key] || 0; thickSeen += nodeSeen[key];
+  }
+  const thickPlies = Object.keys(plyAgg).map(Number).sort((a, b) => a - b);
+  const priorStay = thickSeen ? thickStay / thickSeen : 0.6;
+  const priorAt = (ply) => {
+    let best = null;
+    for (const pl of thickPlies) if (pl <= ply) best = pl;
+    if (best == null) return priorStay;
+    return plyAgg[best].stay / plyAgg[best].seen;
+  };
+
+  // coverage: P(opponent stays scripted until a terminal), node-product over the tree
+  const memo = {};
+  const cover = (b, k) => {
+    const key = posKey(b, k % 2);
+    if (memo[key] != null) return memo[key];
+    let v;
+    if (k % 2 === 0) {
+      const u = tree.REP.user[key];
+      v = u ? cover(applyTok(b, u.m), k + 1) : 1;
+    } else {
+      const entry = tree.REP.opp[key] || [];
+      if (!entry.length) v = 1;
+      else {
+        const n = nodeSeen[key] || 0;
+        const stay = n >= minN ? (nodeStay[key] || 0) / n : priorAt(k);
+        // split the stay mass across scripted replies by observed share (evenly when unobserved)
+        const mv = nodeMove[key] || {};
+        const totalObs = Object.values(mv).reduce((a, x) => a + x, 0);
+        let acc = 0;
+        for (const e of entry) {
+          const child = cover(applyTok(b, e.m), k + 1);
+          const w = totalObs ? (mv[(e.san || "").replace(/^\d+\.+/, "").replace(/[!?]+$/, "").replace(/[+#]/g, "")] || 0) / totalObs : 1 / entry.length;
+          acc += w * child;
+        }
+        // unobserved replies at an observed node carry no mass; renormalize only when nothing was observed
+        v = stay * acc;
+      }
+    }
+    memo[key] = v; return v;
+  };
+  const coverage = cover(START.slice(), 0);
+
+  // direct empirical coverage (games that ran to a terminal among resolved games)
+  const resolved = buckets.opp.length + buckets.done.length;
+  const coveredDirect = resolved ? buckets.done.length / resolved : null;
+
+  // leaks ranked by frequency x score deficit
+  const leaks = [];
+  for (const key of Object.keys(nodeLeaks)) {
+    for (const [move, rec] of Object.entries(nodeLeaks[key])) {
+      const gs2 = buckets.opp.filter((x) => x.out.key === key && clean(x.out.played) === move).map((x) => x.g);
+      const sc = scorePct(gs2);
+      leaks.push({ key, move, ply: nodePly[key], n: rec.n, mass: e4.length ? rec.n / e4.length : 0, score: sc,
+        ev: rec.n * Math.max(0, (52 - (sc == null ? 52 : sc)) / 100) });
+    }
+  }
+  leaks.sort((a, b) => (b.ev - a.ev) || (b.n - a.n));
+
+  // your misses on tree positions
+  const missMap = {};
+  for (const { g, out } of buckets.user) {
+    const id = out.key + "|" + clean(out.expected);
+    const m = missMap[id] = missMap[id] || { key: out.key, expected: out.expected, ply: out.ply, plays: {}, n: 0, recent: 0, urls: [] };
+    m.n++; if ((g.t || 0) * 1000 >= recentMs) m.recent++;
+    const pl = clean(out.played);
+    m.plays[pl] = (m.plays[pl] || 0) + 1;
+    if (m.urls.length < 3 && g.url) m.urls.push(g.url);
+  }
+  const misses = Object.values(missMap).sort((a, b) => b.recent - a.recent || b.n - a.n);
+
+  return {
+    totals: { games: games.length, white: white.length, e4: e4.length,
+      user: buckets.user.length, opp: buckets.opp.length, done: buckets.done.length },
+    coverage, coveredDirect, priorStay,
+    scores: { user: scorePct(buckets.user.map((x) => x.g)), opp: scorePct(buckets.opp.map((x) => x.g)), done: scorePct(buckets.done.map((x) => x.g)) },
+    leaks, misses,
+  };
+};
+
+/* recommender: which leaks would a not-yet-learned pack absorb? */
+export const packGains = (currentTree, candidateTrees, leaks) => {
+  return candidateTrees.map(({ id, tree }) => {
+    let n = 0; const covers = [];
+    for (const L of leaks) {
+      const entry = (tree.REP.opp[L.key] || []);
+      if (entry.some((e) => clean(e.san) === L.move) && !(currentTree.REP.opp[L.key] || []).some((e) => clean(e.san) === L.move)) {
+        n += L.n; covers.push(L.move);
+      }
+    }
+    return { id, n, covers };
+  }).filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
+};

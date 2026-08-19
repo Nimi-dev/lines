@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { MEM, retrievability, foldResult, owned, seedFromConf } from "./scoring.js";
+import { sanList, analyzeGames, packGains } from "./games.js";
 
 /* ---------- palette ---------- */
 const C = {
   ink: "#171310", surface: "#211B15", card: "#2A231B", line: "#3A3128",
   cream: "#EFE6D6", muted: "#A2947E",
-  boardLight: "#E9DCC3", boardDark: "#77593F",
+  boardLight: "#EBECD0", boardDark: "#779556", // chess.com green board
   gold: "#D9A441", goldSoft: "rgba(217,164,65,0.16)",
   red: "#CE4A36", redSoft: "rgba(206,74,54,0.16)",
   green: "#7BAE6E",
@@ -2698,25 +2699,23 @@ function Board({ pieces, last, marks = [], sel, frame, onTap, flip = false, size
               className="flex items-center justify-center select-none"
               style={{
                 aspectRatio: "1 / 1", position: "relative",
-                background: isSel ? C.gold : isMark ? C.gold + "CC" : isLast ? (dark ? "#8A7A3A" : "#CFC06E") : dark ? C.boardDark : C.boardLight,
+                background: isSel ? (dark ? "#BBCB2B" : "#F5F682") : isMark ? (dark ? "#D36C50" : "#EB7D6A") : isLast ? (dark ? "#B9CA43" : "#F5F682") : dark ? C.boardDark : C.boardLight,
                 cursor: onTap ? "pointer" : "default",
-                fontSize: "min(8vw, 34px)", lineHeight: 1,
               }}>
               {i % 8 === 0 && (
-                <span style={{ position: "absolute", top: 1, left: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "rgba(250,246,234,0.55)" : "rgba(36,27,18,0.5)", pointerEvents: "none" }}>
+                <span style={{ position: "absolute", top: 1, left: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "#EBECD0" : "#779556", pointerEvents: "none" }}>
                   {rank + 1}
                 </span>
               )}
               {Math.floor(i / 8) === 7 && (
-                <span style={{ position: "absolute", bottom: 1, right: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "rgba(250,246,234,0.55)" : "rgba(36,27,18,0.5)", pointerEvents: "none" }}>
+                <span style={{ position: "absolute", bottom: 1, right: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "#EBECD0" : "#779556", pointerEvents: "none" }}>
                   {"abcdefgh"[file]}
                 </span>
               )}
               {p && (
-                <span style={{
-                  color: p === p.toUpperCase() ? "#FAF6EA" : "#241B12",
-                  textShadow: p === p.toUpperCase() ? "0 1px 2px rgba(0,0,0,0.65)" : "0 1px 1px rgba(255,255,255,0.12)",
-                }}>{GLYPH[p.toLowerCase()]}</span>
+                <img src={`/pieces/${p.toLowerCase()}${p === p.toUpperCase() ? "l" : "d"}.svg`} alt={p}
+                  draggable={false}
+                  style={{ width: "94%", height: "94%", pointerEvents: "none", userSelect: "none" }} />
               )}
             </div>
           );
@@ -3216,6 +3215,8 @@ const GKEY = "lines-gauntlet-v1";
 const GKEY2 = "lines-gauntlet-v2";
 const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // learned packs added to the gauntlet tree
+const CCUSER = "lines-cc-user";    // chess.com username
+const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
 const APP_VER = "v6.2·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
@@ -3908,6 +3909,177 @@ function Gauntlet({ onExit }) {
   );
 }
 
+/* ============ MY GAMES — coverage, leaks, and what to learn, from real chess.com games ============ */
+function GamesPanel({ onExit }) {
+  const [user, setUser] = useState("");
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+  const [gains, setGains] = useState([]);
+  const [learned, setLearned] = useState([]);
+  const [mem, setMem] = useState({});
+  const [gameCount, setGameCount] = useState(0);
+
+  useEffect(() => {
+    (async () => {
+      try { const u = STORE && (await STORE.get(CCUSER)); if (u && u.value) setUser(u.value); } catch (e) {}
+      let lp = [];
+      try { const t = STORE && (await STORE.get(TREEKEY)); if (t && t.value) { lp = JSON.parse(t.value); setLearned(lp); } } catch (e) {}
+      try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {}
+      try {
+        const c = STORE && (await STORE.get(CCCACHE));
+        if (c && c.value) { const d = JSON.parse(c.value); if (d.user) analyze(Object.values(d.months || {}).flat(), treeFor(lp)); }
+      } catch (e) {}
+    })();
+  }, []);
+
+  const treeFor = (lp) => (lp.length ? buildTree([...CORE_PACK_IDS, ...lp.filter((id) => LEARNABLE_PACK_IDS.includes(id))]) : DEFAULT_TREE);
+  const currentTree = useMemo(() => treeFor(learned), [learned]);
+
+  const analyze = (recs, treeOverride) => {
+    const games = recs.map((g) => ({ white: !!g.w, s: g.s, r: g.r, t: g.t, url: g.url }));
+    const tree = treeOverride || currentTree;
+    const r = analyzeGames(tree, { sq, posKey, START }, games);
+    const inTree = tree.packIds;
+    const cands = LEARNABLE_PACK_IDS.filter((id) => !inTree.includes(id))
+      .map((id) => ({ id, tree: buildTree([...inTree, id]) }));
+    setGains(packGains(tree, cands, r.leaks));
+    setRes(r); setGameCount(games.filter((g) => g.white).length);
+    setStatus(null);
+  };
+
+  const fetchGames = async () => {
+    const u = user.trim().toLowerCase();
+    if (!u) { setStatus("enter your chess.com username first"); return; }
+    setBusy(true);
+    try {
+      try { if (STORE) await STORE.set(CCUSER, u); } catch (e) {}
+      setStatus("fetching archive list…");
+      const ar = await (await fetch(`https://api.chess.com/pub/player/${u}/games/archives`)).json();
+      const months = ar.archives || [];
+      if (!months.length) { setStatus("no games found for that username"); setBusy(false); return; }
+      let cache = {};
+      try { const c = STORE && (await STORE.get(CCCACHE)); if (c && c.value) cache = JSON.parse(c.value); } catch (e) {}
+      if (cache.user !== u) cache = { user: u, months: {} };
+      const cur = months[months.length - 1];
+      const out = [];
+      for (let i = 0; i < months.length; i++) {
+        const url = months[i];
+        const mk = url.slice(-7).replace("/", "-");
+        let recs = cache.months[mk];
+        if (!recs || url === cur) {
+          setStatus(`fetching ${mk} (${i + 1}/${months.length})…`);
+          const d = await (await fetch(url)).json();
+          recs = (d.games || [])
+            .filter((g) => g.time_class === "rapid" && g.rules === "chess" && g.pgn)
+            .map((g) => ({ w: g.white.username.toLowerCase() === u ? 1 : 0, s: sanList(g.pgn).slice(0, 44),
+              r: g.white.username.toLowerCase() === u ? g.white.result : g.black.result, t: g.end_time, url: g.url }));
+          cache.months[mk] = recs;
+        }
+        out.push(...recs);
+      }
+      try { if (STORE) await STORE.set(CCCACHE, JSON.stringify(cache)); } catch (e) {}
+      analyze(out);
+    } catch (e) { setStatus("fetch failed — check the username and your connection"); }
+    setBusy(false);
+  };
+
+  const chipOf = (id) => (PACKS.find((p) => p.id === id) || {}).chip || id;
+  const coveredBy = (leak) => { const g = gains.find((x) => x.covers.includes(leak.move) && x.n >= leak.n); return g ? g.id : null; };
+  const moveNoOf = (ply) => Math.floor(ply / 2) + 1;
+  const Card = ({ title, children }) => (
+    <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: C.muted }}>{title}</div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4 px-5 pb-8">
+      <Eyebrow>{"♟"} My games — the tree vs reality</Eyebrow>
+      <div className="flex gap-2">
+        <input value={user} onChange={(e) => setUser(e.target.value)} placeholder="chess.com username"
+          style={{ flex: 1, background: C.card, color: C.cream, border: `1px solid ${C.line}`, borderRadius: 8, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, padding: "10px 12px" }} />
+        <button onClick={fetchGames} disabled={busy}
+          style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, borderRadius: 8, padding: "0 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: busy ? 0.5 : 1 }}>
+          {busy ? "…" : res ? "Refresh" : "Analyze"}
+        </button>
+      </div>
+      {status && <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, margin: 0 }}>{status}</p>}
+      {res && (<>
+        <Card title={`COVERAGE · from ${res.totals.e4} rapid games as White`}>
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 40, color: C.gold, lineHeight: 1 }}>{Math.round(100 * res.coverage)}%</span>
+            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85, lineHeight: 1.45 }}>of your 1.e4 games would run inside your current tree to a line’s end, if you play your moves — estimated node-by-node from your own opponents.</span>
+          </div>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
+            observed endings: {res.totals.done} ran a full line · {res.totals.opp} opponent left · {res.totals.user} you left first
+          </div>
+          {gains.length > 0 && (
+            <div className="flex flex-col gap-1 pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
+              {gains.map((g) => (
+                <div key={g.id} style={{ fontSize: 12.5, color: C.gold }}>
+                  ＋ {chipOf(g.id)} would absorb <b>{g.n}</b> of these games ({Math.round((100 * g.n) / Math.max(1, res.totals.e4))}%) — learn it, then add it on the Daily page.
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+        <Card title="TOP LEAKS · where opponents leave your tree">
+          {res.leaks.slice(0, 8).map((L, i) => {
+            const cb = coveredBy(L);
+            return (
+              <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
+                <span style={{ color: C.cream }}>
+                  {moveNoOf(L.ply)}… <b>{L.move}</b>
+                  {cb ? <span style={{ color: C.gold }}> · {chipOf(cb)} covers this</span> : null}
+                </span>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: L.score != null && L.score < 45 ? C.red : C.muted, whiteSpace: "nowrap" }}>
+                  {L.n}× · you score {L.score == null ? "—" : L.score + "%"}
+                </span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>ranked by frequency × score deficit — a common line you already beat is not a priority.</div>
+        </Card>
+        <Card title="YOUR MISSES · tree positions where you left book first">
+          {res.misses.length === 0 && <div style={{ fontSize: 12.5, color: C.cream }}>None — every deviation was your opponent’s. Keep it that way.</div>}
+          {res.misses.slice(0, 8).map((m, i) => {
+            const rec = mem[m.key];
+            const R = retrievability(rec, Date.now());
+            const played = Object.entries(m.plays).sort((a, b) => b[1] - a[1]).map(([mv, n2]) => `${mv}×${n2}`).join(" ");
+            return (
+              <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
+                <span style={{ color: C.cream }}>move {moveNoOf(m.ply)}: expected <b style={{ color: C.gold }}>{m.expected}</b> — played {played}</span>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: m.recent ? C.red : C.muted, whiteSpace: "nowrap" }}>
+                  {m.n}×{m.recent ? ` · ${m.recent} recent` : ""} · {rec ? `R ${R.toFixed(2)}` : "untrained"}
+                </span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>
+            “recent” = last 30 days. Old misses are mostly pre-training habits; recent misses on trained ground are the real flags — drill those runs today.
+          </div>
+        </Card>
+        <Card title="RESULTS BY BUCKET">
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: C.cream, lineHeight: 1.8 }}>
+            line completed: {res.totals.done} games · score {res.scores.done == null ? "—" : res.scores.done + "%"}<br />
+            opponent left tree: {res.totals.opp} · score {res.scores.opp == null ? "—" : res.scores.opp + "%"}<br />
+            you left first: {res.totals.user} · score {res.scores.user == null ? "—" : res.scores.user + "%"}
+          </div>
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>the value proposition, measured: the gap between “line completed” and the rest is what the tree is worth per game.</div>
+        </Card>
+      </>)}
+      {!res && !busy && (
+        <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.6 }}>
+          Fetches your public chess.com rapid games (straight from your device — nothing leaves it except the chess.com request), walks every 1.e4 game against your tree, and reports: how much of your real opposition your lines cover, where the leaks are, which pack would plug them, and where YOU left book first.
+        </p>
+      )}
+      <Btn full tone="ghost" onClick={onExit}>{"←"} Back</Btn>
+    </div>
+  );
+}
+
 export default function LinesMock() {
   const [view, setView] = useState("packs");
   const [packId, setPackId] = useState("mieses");
@@ -3934,12 +4106,16 @@ export default function LinesMock() {
         <header className="px-5 pt-5 pb-3 flex flex-col gap-3">
           <div className="flex items-baseline justify-between">
             <div style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 22 }}>lines</div>
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, letterSpacing: "0.08em" }}>{view === "daily" ? "⚡ DAILY GAUNTLET · SCOTCH" : pack.badge}</div>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, letterSpacing: "0.08em" }}>{view === "daily" ? "⚡ DAILY GAUNTLET" : view === "games" ? "♟ MY GAMES · COVERAGE" : pack.badge}</div>
           </div>
           {view === "packs" && (<>
           <button onClick={() => setView("daily")} className="rounded-md px-4 py-2.5 text-left"
             style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, fontSize: 13.5, fontWeight: 600 }}>
-            ⚡ Daily gauntlet — the whole Scotch, shuffled →
+            ⚡ Daily gauntlet — your whole tree, shuffled →
+          </button>
+          <button onClick={() => setView("games")} className="rounded-md px-4 py-2.5 text-left"
+            style={{ background: "transparent", border: `1px solid ${C.line}`, color: C.cream, fontSize: 13, fontWeight: 500 }}>
+            ♟ My games — coverage, leaks, what to learn →
           </button>
           <div className="flex flex-col gap-1">
             {[true, false].map((rep) => (
@@ -3988,8 +4164,9 @@ export default function LinesMock() {
           ) : null}
           </>)}
         </header>
-        <main className="flex-1 pb-28 pt-2" style={{ paddingLeft: view === "daily" ? 0 : 20, paddingRight: view === "daily" ? 0 : 20 }}>
+        <main className="flex-1 pb-28 pt-2" style={{ paddingLeft: view === "packs" ? 20 : 0, paddingRight: view === "packs" ? 20 : 0 }}>
           {view === "daily" && <Gauntlet onExit={() => setView("packs")} />}
+          {view === "games" && <GamesPanel onExit={() => setView("packs")} />}
           {view === "packs" && tab === "end" && <EndScreen key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "learn" && <LearnFlow key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "edge" && <EdgeCases key={packId} pack={pack} go={setTab} switchPack={switchPack} />}

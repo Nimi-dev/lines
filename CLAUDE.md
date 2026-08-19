@@ -51,14 +51,63 @@ your own proposal first and put the findings at the top of the PR:
   does the artifact actually drive — optimize that. What signals are we
   discarding? Which assumption is most likely false?
 
+### The experiment-class checklist (from the design chat — run EVERY class)
+
+Validation coverage must track a fixed taxonomy, not conversational salience —
+whatever frame someone happens to utter is exactly the frame that over-gets
+validated. De-leading by enumeration: the red-team stage runs this closed
+checklist, and every mechanism addresses each class **or explicitly waives it
+in writing**. Beyond personas, cheapest exploit, boundaries, invariance, and
+incentives (above):
+
+- **Null-model test** — must beat a dumb baseline ("everything resurfaces
+  every 3 days flat"). If the trivial policy performs similarly, the
+  complexity isn't paying rent.
+- **Ablation** — delete each component (miss penalty, gap weighting, growing
+  half-life); what breaks? Separates load-bearing from decorative.
+- **Sensitivity sweep** — perturb every constant 2× each way; a design that
+  only works at magic values is a coincidence, not a mechanism.
+- **Identifiability** — can the mechanism distinguish the states it claims to
+  measure from the signals it actually receives?
+- **Second-order adaptation** — users learn the scoring and change behavior;
+  does the mechanism stay valid once it's being gamed by habit rather than
+  malice?
+- **Pre-mortem** — it's November, the feature failed, users left; write the
+  most plausible postmortem today.
+- **Dirty-data robustness** — clock skew, duplicate events, lost writes (we
+  lived this bug), offline replays.
+- **Transplant test** — would it work for vocabulary or piano? Locates hidden
+  chess-specific assumptions — which matters if the platform is the startup.
+- **Explainability** — can we tell the user in one sentence why this position
+  is due? Unexplainable scores leak trust.
+
 A proposal without its failure analysis attached is incomplete by definition.
 
-## Current model notes (v6.2 line)
+## Current model notes (v6.3 line)
 
-- Mastery is per-position; evidence includes arrival-door tags (`via`).
-  A v6.3 scoring redesign (event-vector fold, gain indexed on predicted
-  retrievability, performance-gated not calendar-gated) is specified in the
-  design chat and will arrive as a brief — do not improvise it.
+- **The v6.3 memory model is live** (src/scoring.js, per the design-chat
+  brief): per-position half-life H (storage strength) and predicted
+  retrievability R = 2^(−Δ/H) (retrieval strength). Stability gain is indexed
+  on the model's own prediction at test time — H *= 1 + g·(1−R) — so
+  same-minute reps earn ≈0 and hard-won recalls earn the most (desirable
+  difficulty, derived not tuned). A miss shrinks H and opens `relearn`; only a
+  clean hand-play closes it. Fast-forward is purely performance-gated
+  (owned = R ≥ 0.8 ∧ ¬relearn); there are no calendar gates. Seven derived
+  properties are machine-checked in tools/scoring-test.mjs — keep them green.
+- Evidence per position: arrival-door tags (`via`), and an event vector
+  `[minuteEpoch, clean, door, latencyMs]` (capped, newest last). Latency is
+  logged because fluency is a validated retrieval-strength proxy — a signal
+  banked for the retrodiction harness (tools/retrodict.mjs), which horse-races
+  scoring models as miss predictors on exported event history.
+- **Known-false assumption on record**: positions are modeled as forgetting
+  independently, but interference is real (the 8.Nc3 ghost). Not addressed in
+  v6.3; any future fix must pass the checklist above.
 - Sessions must stay time-efficient: target users are strong players who may
   already know lines. The app acknowledges demonstrated knowledge at the
   speed it is demonstrated; time is only for decay.
+- Chess content answers to two machine gates: SEE audit (tools/see-audit.mjs,
+  in CI) and the deep engine audit (tools/line-audit.mjs --cloud, run on any
+  content change — it caught 10.Qe4?, which the shallow engine cleared).
+  Three deliberate keeps are on record: 8.bxc3 / 9.Bd3! (Steinitz) and
+  8.Nc3 (Declines) are engine-suboptimal by ~1 pawn-fraction but sound,
+  winning, and simpler to teach than the engine's preference.
