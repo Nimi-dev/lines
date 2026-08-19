@@ -37,6 +37,10 @@ export const buildLineDoc = (pack, extras, run, helpers) => {
     const base = (g.base || dream.slice(0, g.baseCount).map((d) => d.m)).map((m, i) => (g.base ? { m, san: "" } : { m, san: dream[i].san, note: dream[i].note, why: dream[i].why }));
     annotate([...base, ...g.plies]);
   }
+  for (const x of (pack.lines || [])) {
+    const xb = (x.base || dream.slice(0, x.baseCount).map((d) => d.m)).map((m, i) => (x.base ? { m, san: "" } : { m, san: dream[i].san, note: dream[i].note, why: dream[i].why }));
+    annotate([...xb, ...x.plies]);
+  }
   // walk the run's actual toks against the annotation map
   let b = START.slice();
   const plies = run.toks.map((m, k) => {
@@ -50,25 +54,30 @@ export const buildLineDoc = (pack, extras, run, helpers) => {
     const fut = ((extras && extras.futures) || []).find((f) => f.t === run.t);
     payoff = { title: run.label, text: (fut && fut.note) || (extras && extras.finalWhy) || "" };
   } else if (run.kind === "edge") {
-    const lastNote = g ? [...g.plies].reverse().find((p) => p.note) : null;
-    payoff = { title: (g && g.headline) || run.label, text: (lastNote && lastNote.note) || (g && g.survival) || "" };
+    const x = run.t ? (pack.lines || []).find((l) => l.t === run.t) : null;
+    const src = x ? x.plies : (g ? g.plies : []);
+    const lastNote = [...src].reverse().find((p) => p.note);
+    payoff = x
+      ? { title: run.t, text: (lastNote && lastNote.note) || "" }
+      : { title: (g && g.headline) || run.label, text: (lastNote && lastNote.note) || (g && g.survival) || "" };
   } else {
     payoff = { title: "The payoff", text: (extras && extras.finalWhy) || (pack.promise && pack.promise.reveal) || "" };
   }
   return { plies, payoff };
 };
 
-/* clusters for the Learn page: WHITE side = scotch core + learnable defenses,
-   BLACK side = (no packs yet). Each cluster lists its runs in gauntlet order. */
-export const buildClusters = (packs, tree, corePackIds, learnablePackIds) => {
+/* clusters for the Learn page: WHITE = scotch core + learnable defenses,
+   BLACK = the black-side packs. Each cluster lists its runs in gauntlet order. */
+export const buildClusters = (packs, tree, treeB, corePackIds, learnablePackIds, blackPackIds) => {
   const byPack = {};
-  for (const r of tree.RUNS) { (byPack[r.packId] = byPack[r.packId] || []).push(r); }
+  for (const r of [...tree.RUNS, ...((treeB && treeB.RUNS) || [])]) { (byPack[r.packId] = byPack[r.packId] || []).push(r); }
   const cluster = (p, group) => ({ id: p.id, chip: p.chip, group, runs: byPack[p.id] || [] });
   const white = [
     ...packs.filter((p) => corePackIds.includes(p.id)).map((p) => cluster(p, "Scotch core")),
     ...packs.filter((p) => learnablePackIds.includes(p.id)).map((p) => cluster(p, "Other defenses")),
   ];
-  return { white, black: [] };
+  const black = packs.filter((p) => (blackPackIds || []).includes(p.id)).map((p) => cluster(p, "Black repertoire"));
+  return { white, black };
 };
 
 /* run status for the Learn page and gauntlet gating */

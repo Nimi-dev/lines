@@ -24,13 +24,13 @@ export const sanList = (pgn) => {
 };
 
 /* one game vs the tree; sans is the game's SAN list, from ply 0 */
-export const walkGame = (tree, sq, posKey, START, sans) => {
+export const walkGame = (tree, sq, posKey, START, sans, userPly = 0) => {
   const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
   let b = START.slice(), k = 0;
   while (k < sans.length) {
     const key = posKey(b, k % 2);
     const gs = clean(sans[k]);
-    if (k % 2 === 0) {
+    if (k % 2 === userPly) {
       const u = tree.REP.user[key];
       if (!u) return { kind: "done", ply: k, key };
       if (clean(u.san) !== gs) return { kind: "user", ply: k, key, expected: u.san, played: sans[k] };
@@ -61,10 +61,13 @@ export const scorePct = (games) => {
 export const analyzeGames = (tree, helpers, games, opts = {}) => {
   const { sq, posKey, START } = helpers;
   const minN = opts.minN || 8;
+  const userPly = opts.side === "black" ? 1 : 0;
   const recentMs = opts.now ? opts.now - 30 * 86400000 : Date.now() - 30 * 86400000;
 
-  const white = games.filter((g) => g.white);
-  const e4 = white.filter((g) => clean(g.s[0]) === "e4");
+  // pool: as White, games where the user opened with the tree's move (1.e4);
+  // as Black, every game — the root is an opponent node, so all games enter.
+  const mine = games.filter((g) => (userPly === 0 ? g.white : !g.white));
+  const e4 = userPly === 0 ? mine.filter((g) => clean(g.s[0]) === "e4") : mine;
 
   // walk every game; also log the opponent's reply at every opp-node reached
   const nodeSeen = {}, nodeStay = {}, nodeLeaks = {}, nodePly = {}, nodeMove = {}; // key -> counts
@@ -76,7 +79,7 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
     while (k < g.s.length) {
       const key = posKey(b, k % 2);
       const gs = clean(g.s[k]);
-      if (k % 2 === 0) {
+      if (k % 2 === userPly) {
         const u = tree.REP.user[key];
         if (!u) break;
         if (clean(u.san) !== gs) break; // conditioned on your positions: past your deviation the branch is unobservable
@@ -99,7 +102,7 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
       }
       k++;
     }
-    const out = walkGame(tree, sq, posKey, START, g.s);
+    const out = walkGame(tree, sq, posKey, START, g.s, userPly);
     buckets[out.kind].push({ g, out });
   }
 
@@ -146,7 +149,7 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
       const key = posKey(b, k % 2);
       if (memo[key] != null) return memo[key];
       let v;
-      if (k % 2 === 0) {
+      if (k % 2 === userPly) {
         const u = tree.REP.user[key];
         v = u ? cover(applyTok(b, u.m), k + 1) : 1;
       } else {
@@ -199,7 +202,7 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
       const cap = Math.min(r.toks.length, 13); // frequency through the teaching zone, not the full tabiya
       for (let k = 0; k < cap; k++) {
         const key = posKey(b, k % 2);
-        if (k % 2 === 1) {
+        if (k % 2 !== userPly) {
           const entry = tree.REP.opp[key] || [];
           const mv = nodeMove[key] || {};
           const totalObs = Object.values(mv).reduce((a, x) => a + x, 0);
@@ -225,7 +228,7 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
   const misses = Object.values(missMap).sort((a, b) => b.recent - a.recent || b.n - a.n);
 
   return {
-    totals: { games: games.length, white: white.length, e4: e4.length,
+    totals: { games: games.length, mine: mine.length, e4: e4.length,
       user: buckets.user.length, opp: buckets.opp.length, done: buckets.done.length },
     coverage, coverageCurve, coveredDirect, priorStay,
     scores: { user: scorePct(buckets.user.map((x) => x.g)), opp: scorePct(buckets.opp.map((x) => x.g)), done: scorePct(buckets.done.map((x) => x.g)) },
