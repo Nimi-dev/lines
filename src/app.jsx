@@ -2509,6 +2509,8 @@ function engineCore() {
     if(whitePOV<-31000) return {mate: -Math.ceil((32000+whitePOV)/2), d:lastD};
     return {cp: whitePOV, d: lastD};
   }
+  // is the side to move in `fen` in check? (drives the board's check sound)
+  function inCheck(fen){ parseFen(fen); return attacked(kingSq(stm), -stm); }
   // legal destination squares for the piece standing on `from` (0..63) in `fen`.
   // Drives the board's move hints — same perft-verified generator the search uses.
   function legalTargets(fen, from){
@@ -2526,21 +2528,117 @@ function engineCore() {
     for(var i=0;i<mv.length;i++){ if(make(mv[i])){ unmake(); out.push((mv[i]>>6)&63); } }
     return out;
   }
-  return { parseFen: parseFen, perft: perft, go: go, evalPos: evalPos, legalTargets: legalTargets, legalCaptureTargets: legalCaptureTargets };
+  return { parseFen: parseFen, perft: perft, go: go, evalPos: evalPos, inCheck: inCheck, legalTargets: legalTargets, legalCaptureTargets: legalCaptureTargets };
 }
 
-/* Move hints for the board: legal destinations of the selected piece, straight
-   from the perft-verified generator (one engine instance, reused). */
-const MOVE_HINTS = (() => {
-  let core = null;
-  return (fen, name) => {
-    if (!fen || !name) return [];
+/* One engine instance for the UI's rules questions — move hints and check. */
+const UI_ENGINE = (() => { let core = null; return () => (core = core || engineCore()); })();
+
+/* Legal destinations of the selected piece, straight from the perft-verified generator. */
+const MOVE_HINTS = (fen, name) => {
+  if (!fen || !name) return [];
+  try { return UI_ENGINE().legalTargets(fen, sq(name)).map(sqName); } catch (e) { return []; }
+};
+
+/* Does this position have the side to move in check? */
+const IN_CHECK = (fen) => {
+  if (!fen) return false;
+  try { return UI_ENGINE().inCheck(fen); } catch (e) { return false; }
+};
+
+/* ---------- sound ----------
+   Synthesized, not sampled: a handful of oscillators beats shipping audio files
+   into a PWA that must work offline, and it keeps the bundle honest. The context
+   is created lazily on the first move, which is always inside a user gesture. */
+const SOUND = (() => {
+  const KEY = "lines-sound-v1";
+  let ctx = null, on = true, tried = false;
+  const ready = STORE
+    ? STORE.get(KEY).then((v) => { if (v && v.value === "off") on = false; }).catch(() => {})
+    : Promise.resolve();
+  const audio = () => {
+    if (ctx) { if (ctx.state === "suspended") ctx.resume().catch(() => {}); return ctx; }
+    if (tried) return null;
+    tried = true;
     try {
-      if (!core) core = engineCore();
-      return core.legalTargets(fen, sq(name)).map(sqName);
-    } catch (e) { return []; }
+      const AC = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+      if (!AC) return null;
+      ctx = new AC();
+    } catch (e) { return null; }
+    return ctx;
   };
+  // a struck-wood thock: pitch drops as it decays, like a piece landing
+  const thock = (c, t, f, dur, gain, type, bend) => {
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || "triangle";
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, f * (bend == null ? 0.55 : bend)), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  };
+  // the contact transient — what makes a click read as wood rather than a beep
+  const tick = (c, t, dur, gain, hp) => {
+    const n = Math.max(1, Math.floor(c.sampleRate * dur));
+    const buf = c.createBuffer(1, n, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = "highpass"; f.frequency.value = hp;
+    const g = c.createGain();
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(c.destination);
+    src.start(t); src.stop(t + dur);
+  };
+  const api = {
+    isOn: () => on,
+    whenReady: () => ready,
+    toggle: async () => {
+      on = !on;
+      if (on) api.move("move", false); // confirm the setting audibly
+      try { if (STORE) await STORE.set(KEY, on ? "on" : "off"); } catch (e) {}
+      return on;
+    },
+    move: (kind, check) => {
+      if (!on) return;
+      const c = audio(); if (!c) return;
+      const t = c.currentTime + 0.001;
+      try {
+        if (kind === "capture") { tick(c, t, 0.07, 0.16, 900); thock(c, t, 150, 0.13, 0.24, "triangle", 0.45); }
+        else if (kind === "castle") { thock(c, t, 200, 0.07, 0.16); thock(c, t + 0.085, 190, 0.09, 0.2); }
+        else { tick(c, t, 0.03, 0.05, 2200); thock(c, t, 205, 0.09, 0.2); }
+        if (check) { thock(c, t + 0.05, 620, 0.06, 0.11, "square", 1); thock(c, t + 0.11, 930, 0.07, 0.1, "square", 1); }
+      } catch (e) {}
+    },
+    error: () => {
+      if (!on) return;
+      const c = audio(); if (!c) return;
+      try { thock(c, c.currentTime + 0.001, 150, 0.2, 0.16, "sawtooth", 0.8); } catch (e) {}
+    },
+  };
+  return api;
 })();
+
+/* castle beats capture beats quiet move; check is an extra blip on top */
+const moveKind = (tok, countBefore, countAfter) =>
+  (tok || "").indexOf(",") > -1 ? "castle" : countAfter < countBefore ? "capture" : "move";
+const pieceCount = (b) => { let n = 0; for (let i = 0; i < 64; i++) if (b[i]) n++; return n; };
+
+/* Sound the board when a new ply lands. Silent on mount — only transitions
+   make noise, so arriving mid-line or re-rendering never fires. */
+function useMoveSound(tok, k, pieces, fen) {
+  const prev = useRef(null);
+  useEffect(() => {
+    const id = k + "|" + (tok || "");
+    const was = prev.current;
+    prev.current = { id, count: pieceCount(pieces) };
+    if (!was || was.id === id || !tok) return;
+    SOUND.move(moveKind(tok, was.count, prev.current.count), IN_CHECK(fen));
+  }, [k, tok]);
+}
 
 const LOCAL_WORKER_MAIN = 'var FEN="";self.onmessage=function(e){var m=e.data;if(m==="uci"){self.postMessage("uciok");}else if(m.indexOf("position fen ")===0){FEN=m.slice(13);}else if(m.indexOf("go")===0){var ms=1150;var mm=m.match(/movetime (\\d+)/);if(mm)ms=parseInt(mm[1],10);var r=core.go(FEN,ms);var side=FEN.split(/\\s+/)[1];var v;var kind;if(r.mate!=null){kind="mate";v=side==="w"?r.mate:-r.mate;}else{kind="cp";v=side==="w"?r.cp:-r.cp;}self.postMessage("info depth "+r.d+" score "+kind+" "+v);self.postMessage("bestmove 0000");}};';
 
@@ -2691,6 +2789,11 @@ const EVAL = (() => {
   };
 })();
 
+const EVAL_CSS = "@keyframes linesEvalPulse{0%,100%{opacity:.5}50%{opacity:.9}}";
+const evalRead = (ev) => ev.mate != null
+  ? { pct: ev.mate > 0 ? 98 : 2, label: "#" + (ev.mate > 0 ? "+" : "−") + Math.abs(ev.mate) }
+  : { pct: 50 + 50 * Math.tanh((ev.cp / 100) / 4), label: (ev.cp >= 0 ? "+" : "") + (ev.cp / 100).toFixed(1) };
+
 function EvalBar({ pieces, hist, k }) {
   const [, force] = useState(0);
   useEffect(() => EVAL.subscribe(() => force((x) => x + 1)), []);
@@ -2698,21 +2801,37 @@ function EvalBar({ pieces, hist, k }) {
   useEffect(() => { EVAL.request(key, toFEN(pieces, hist, k), k % 2 === 0 ? "w" : "b"); }, [key]);
   const st = EVAL.getStatus();
   const ev = EVAL.get(key);
-  let pct = 50, label = "…";
-  if (ev) {
-    if (ev.mate != null) { pct = ev.mate > 0 ? 98 : 2; label = "#" + (ev.mate > 0 ? "+" : "−") + Math.abs(ev.mate); }
-    else { const pw = ev.cp / 100; pct = 50 + 50 * Math.tanh(pw / 4); label = (pw >= 0 ? "+" : "") + pw.toFixed(1); }
-  } else if (st === "offline") { label = "offline · " + EVAL.getStage(); }
+
+  // The engine takes a second per position. Blanking the bar to 50/50 while it
+  // thinks reads as "the game is level", which is a claim we haven't earned —
+  // so hold the last score we actually computed and mark it as stale instead.
+  // Only within one forward-running game: a new run (k back to 0) drops it.
+  const held = useRef(null);
+  if (ev) { const r = evalRead(ev); held.current = { k, pct: r.pct, label: r.label, d: ev.d, s: ev.s }; }
+  else if (held.current && k <= held.current.k) { held.current = null; }
+  const stale = !ev && held.current ? held.current : null;
+
+  const pct = ev ? evalRead(ev).pct : stale ? stale.pct : 50;
+  const fresh = ev ? evalRead(ev) : null;
+  let label, suffix = "", tone = C.muted;
+  if (fresh) { label = fresh.label; suffix = ` · d${ev.d}${ev.s === "loc" ? " local" : ""}`; tone = C.gold; }
+  else if (stale) { label = stale.label; suffix = " · ⟳"; tone = C.gold + "99"; }
+  else if (st === "offline") { label = "offline · " + EVAL.getStage(); }
   else if (st === "loading") { label = EVAL.getStage(); }
   else { label = "thinking…"; }
+
   return (
-    <div className="flex items-center gap-2">
-      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: C.muted, opacity: 0.75 }}>{ev && ev.s === "loc" ? "eng" : "SF"}</span>
-      <div className="flex-1 rounded" style={{ height: 9, background: "#221A13", overflow: "hidden", border: `1px solid ${C.line}` }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "#EDE6D6", transition: "width .5s" }} />
+    <div className="flex items-center gap-2" title={stale ? "last computed score — the engine is still thinking about this position" : undefined}>
+      <style>{EVAL_CSS}</style>
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: C.muted, opacity: 0.75 }}>{(ev || stale) && (ev ? ev.s : stale.s) === "loc" ? "eng" : "SF"}</span>
+      <div className="flex-1 rounded" style={{ height: 9, background: "#221A13", overflow: "hidden", border: `1px solid ${C.line}`, position: "relative" }}>
+        <div style={{
+          width: `${pct}%`, height: "100%", background: "#EDE6D6", transition: "width .5s",
+          animation: stale ? "linesEvalPulse 1.2s ease-in-out infinite" : "none",
+        }} />
       </div>
-      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: ev ? C.gold : C.muted, minWidth: 84, textAlign: "right" }}>
-        {label}{ev ? ` · d${ev.d}${ev.s === "loc" ? " local" : ""}` : ""}
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: tone, minWidth: 84, textAlign: "right" }}>
+        {label}{suffix}
       </span>
     </div>
   );
@@ -2822,8 +2941,10 @@ function FuturesPanel({ pack }) {
     );
   }
   const fut = ex.futures[fi];
-  const pieces = applyMoves([...baseMoves, ...fut.moves.slice(0, k).map((x) => x.m)]);
+  const futMoves = [...baseMoves, ...fut.moves.slice(0, k).map((x) => x.m)];
+  const pieces = applyMoves(futMoves);
   const last = k > 0 ? fromTo(fut.moves[k - 1].m) : finalLast;
+  useMoveSound(k > 0 ? fut.moves[k - 1].m : null, baseMoves.length + k, pieces, toFEN(pieces, futMoves, futMoves.length));
   const doneF = k === fut.moves.length;
   return (
     <div className="flex flex-col gap-3">
@@ -2934,6 +3055,7 @@ function ExplainWalk({ pack, onDrill, switchPack }) {
   const ply = D[si];
   const pieces = applyMoves(D.slice(0, si + 1).map((p) => p.m));
   const atLast = si === D.length - 1;
+  useMoveSound(ply.m, si, pieces, toFEN(pieces, D.slice(0, si + 1).map((p) => p.m), si + 1));
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -3052,12 +3174,13 @@ function FullDrill({ pack, go, onExplain }) {
     if (!sel) return;
     const [from, to] = fromTo(expected.m);
     if (sel === from && name === to) { advance(); }
-    else if (miss === 0) { setMiss(1); setMistakes(mistakes + 1); }
-    else { setMiss(2); setTimeout(advance, 900); }
+    else if (miss === 0) { SOUND.error(); setMiss(1); setMistakes(mistakes + 1); }
+    else { SOUND.error(); setMiss(2); setTimeout(advance, 900); }
     setSel(null);
   };
   const lastM = idx > 0 ? D[idx - 1].m : null;
   const fen = toFEN(pieces, D.slice(0, idx).map((p) => p.m), idx);
+  useMoveSound(lastM, idx, pieces, fen);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -3219,6 +3342,7 @@ function EdgeCases({ pack, go, switchPack }) {
   const pieces = applyMoves(applied);
   const lastM = applied[applied.length - 1];
   const fen = toFEN(pieces, applied, divergeIdx + t);
+  useMoveSound(lastM, divergeIdx + t, pieces, fen);
   const advance = () => { setT(t + 1); setSel(null); setMiss(0); };
   const tap = (name) => {
     if (waiting || !expected) return;
@@ -3227,8 +3351,8 @@ function EdgeCases({ pack, go, switchPack }) {
     if (!sel) return;
     const [from, to] = fromTo(expected.m);
     if (sel === from && name === to) { advance(); }
-    else if (miss === 0) { setMiss(1); setStumbles(stumbles + 1); }
-    else { setMiss(2); setTimeout(advance, 900); }
+    else if (miss === 0) { SOUND.error(); setMiss(1); setStumbles(stumbles + 1); }
+    else { SOUND.error(); setMiss(2); setTimeout(advance, 900); }
     setSel(null);
   };
   return (
@@ -3280,7 +3404,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // learned packs added to the gauntlet tree
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.3.2·git";
+const APP_VER = "v6.3.3·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -3589,6 +3713,9 @@ function Gauntlet({ onExit }) {
     ? { m: cur.toks[k], san: cur.sans[k] || "" } : null;
   const expFT = expected ? fromTo(expected.m) : null;
 
+  const fen = toFEN(pieces, hist, k);
+  useMoveSound(lastTok, k, pieces, fen);
+
   const onTap = (name) => {
     if (!expected) return;
     const pc = pieces[sq(name)];
@@ -3605,6 +3732,7 @@ function Gauntlet({ onExit }) {
     } else {
       const nm = miss + 1;
       setSel(null);
+      SOUND.error();
       if (nm === 1) {
         const wasOwned = owned(conf[key], Date.now());
         setMiss(1); setRunMisses((r) => r + 1);
@@ -3951,7 +4079,7 @@ function Gauntlet({ onExit }) {
         </div>
       )}
       <EvalBar pieces={pieces} hist={hist} k={k} />
-      <Board pieces={pieces} last={lastTok ? fromTo(lastTok) : null} sel={sel} fen={toFEN(pieces, hist, k)}
+      <Board pieces={pieces} last={lastTok ? fromTo(lastTok) : null} sel={sel} fen={fen}
         marks={miss === 1 && expFT ? [expFT[0]] : []}
         onTap={onTap} frame={null} />
       <div className="flex gap-3">
@@ -4147,6 +4275,8 @@ function GamesPanel({ onExit }) {
 
 export default function LinesMock() {
   const [view, setView] = useState("packs");
+  const [snd, setSnd] = useState(SOUND.isOn());
+  useEffect(() => { SOUND.whenReady().then(() => setSnd(SOUND.isOn())); }, []);
   const [packId, setPackId] = useState("mieses");
   const [fam, setFam] = useState("scotch");
   const [tab, setTab] = useState("end");
@@ -4235,9 +4365,18 @@ export default function LinesMock() {
           {view === "packs" && tab === "end" && <EndScreen key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "learn" && <LearnFlow key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "edge" && <EdgeCases key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
-          <p className="pt-6" style={{ fontSize: 11, color: C.muted, opacity: 0.7 }}>
-            UX prototype {APP_VER} — lines SEE-audited · evals: real on-device search · Stockfish auto-engages outside this sandbox.
-          </p>
+          <div className="pt-6 flex items-center gap-2" style={{ paddingLeft: view === "packs" ? 0 : 20, paddingRight: view === "packs" ? 0 : 20 }}>
+            <button onClick={async () => setSnd(await SOUND.toggle())}
+              aria-label={snd ? "Mute move sounds" : "Unmute move sounds"}
+              title={snd ? "Move sounds on — tap to mute" : "Move sounds off — tap to unmute"}
+              className="px-2 py-1 rounded"
+              style={{ background: "transparent", border: `1px solid ${C.line}`, color: snd ? C.gold : C.muted, fontSize: 12, flexShrink: 0 }}>
+              {snd ? "🔊" : "🔇"}
+            </button>
+            <p style={{ fontSize: 11, color: C.muted, opacity: 0.7, margin: 0 }}>
+              UX prototype {APP_VER} — lines SEE-audited · evals: real on-device search · Stockfish auto-engages outside this sandbox.
+            </p>
+          </div>
         </main>
         {view === "packs" && (
         <nav className="fixed bottom-0 left-0 right-0" style={{ background: C.surface, borderTop: `1px solid ${C.line}` }}>
@@ -4261,4 +4400,4 @@ export default function LinesMock() {
 }
 
 /* ---------- test exports (tools/*.mjs) — export-only edit, no behavior change ---------- */
-export { engineCore, sqName, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS };
+export { engineCore, sqName, moveKind, pieceCount, evalRead, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS };

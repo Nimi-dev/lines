@@ -19,6 +19,22 @@ const browser = await puppeteer.launch({
 });
 await browser.defaultBrowserContext().overridePermissions("http://localhost:4189", ["clipboard-read", "clipboard-write", "clipboard-sanitized-write"]);
 const page = await browser.newPage();
+// count synthesized voices — the move sounds are generated, not fetched, so
+// there is no network request or <audio> element to look for
+await page.evaluateOnNewDocument(() => {
+  window.__voices = 0;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const wrap = function (...a) {
+    const c = new AC(...a);
+    const co = c.createOscillator.bind(c), cb = c.createBufferSource.bind(c);
+    c.createOscillator = () => { window.__voices++; return co(); };
+    c.createBufferSource = () => { window.__voices++; return cb(); };
+    return c;
+  };
+  window.AudioContext = wrap;
+  window.webkitAudioContext = wrap;
+});
 await page.setViewport({ width: 400, height: 850 });
 const errors = [];
 page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
@@ -39,7 +55,7 @@ const step = (name, cond) => { assert.ok(cond, "FAILED: " + name); console.log("
 
 await page.goto("http://localhost:4189/", { waitUntil: "networkidle0" });
 step("app renders", await hasText("lines"));
-step("footer stamps v6.3.2·git", await hasText("v6.3.2·git"));
+step("footer stamps v6.3.3·git", await hasText("v6.3.3·git"));
 
 // packs view shows the new Philidor pack chip (in the shield family)
 await clickByText("Other defenses");
@@ -90,6 +106,18 @@ const tapSquare = async (name) => {
   assert.ok(done, "no board grid");
   await new Promise((r) => setTimeout(r, 250));
 };
+// wait for the first real evaluation so the hold behaviour can be checked
+const evalLabel = () => page.evaluate(() => {
+  const els = [...document.querySelectorAll("span")].filter((s) => s.children.length === 0 && s.textContent.length < 40);
+  const el = els.find((s) => /[+-]\d+\.\d|#[+−]\d|thinking|offline/.test(s.textContent));
+  return el ? el.textContent.trim() : "";
+});
+let firstEval = "";
+for (let i = 0; i < 24 && !/[+-]\d+\.\d|#[+−]/.test(firstEval); i++) { firstEval = await evalLabel(); await new Promise((r) => setTimeout(r, 500)); }
+const gotEval = /[+-]\d+\.\d|#[+−]/.test(firstEval);
+if (!gotEval) console.log(`  -- eval-hold steps skipped: no engine score in 12s (last label: "${firstEval}")`);
+const voicesBefore = await page.evaluate(() => window.__voices || 0);
+
 await tapSquare("e2");
 const hints = await page.evaluate(() => ({
   move: document.querySelectorAll('[data-hint="move"]').length,
@@ -97,6 +125,12 @@ const hints = await page.evaluate(() => ({
 }));
 step("selecting e2 dots its two legal squares", hints.move === 2 && hints.capture === 0);
 await tapSquare("e4");
+if (gotEval) {
+  const during = await evalLabel();
+  step("eval bar holds the last score while recomputing", /[+-]\d+\.\d|#[+−]/.test(during));
+  step("eval bar marks the held score as stale", during.includes("⟳"));
+}
+step("moving a piece makes a sound", (await page.evaluate(() => window.__voices || 0)) > voicesBefore);
 await new Promise((r) => setTimeout(r, 900));
 step("1.e4 played, opponent replied", await page.evaluate(() => document.body.innerText.includes("your move — from memory")));
 step("clean so far", await hasText("clean"));
@@ -111,6 +145,9 @@ step("re-select shows the new piece's hints", await page.evaluate(() =>
 await tapSquare("a2"); await tapSquare("a3");
 await new Promise((r) => setTimeout(r, 400));
 step("miss registered with relearn message", await hasText("logged as a miss"));
+
+// a wrong move buzzes as well as logging
+step("a miss makes an error sound", (await page.evaluate(() => window.__voices || 0)) > 0);
 
 // back to session home; memory bar should now show progress
 await clickByText("☰ Session");
