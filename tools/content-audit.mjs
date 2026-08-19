@@ -4,7 +4,32 @@
 // bare "He plays 5...Nd5" in the drill. Off-repertoire study packs are exempt:
 // they are read once, not drilled daily.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { loadApp } from "./_load.mjs";
+
+/* A duplicate key in an object literal is silently legal JavaScript: the last
+   one wins and the earlier value vanishes without a warning. A pack that gains
+   a second `lines:` loses every coverage branch in the first one, and the only
+   symptom is a tree that quietly got smaller. Checked on the source text,
+   because by the time the module is imported the evidence is already gone. */
+{
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "app.jsx"), "utf8").split("\n");
+  let block = null, keys = null, dupes = [];
+  for (const line of src) {
+    const open = line.match(/^const ([A-Z][A-Z0-9_]*) = \{$/);
+    if (open) { block = open[1]; keys = new Map(); continue; }
+    if (block && line === "};") {
+      for (const [k, n] of keys) if (n > 1) dupes.push(`${block}.${k} appears ${n}×`);
+      block = null; continue;
+    }
+    if (!block) continue;
+    const key = line.match(/^  ([a-zA-Z_$][\w$]*): /);
+    if (key) keys.set(key[1], (keys.get(key[1]) || 0) + 1);
+  }
+  assert.equal(dupes.length, 0, `duplicate object keys silently drop data: ${dupes.join(", ")}`);
+}
 
 const { PACKS, EXTRAS, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS } = await loadApp();
 
