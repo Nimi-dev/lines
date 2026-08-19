@@ -1,5 +1,6 @@
 // Browser smoke test (LOCAL ONLY — not part of npm test / CI).
-// Requires: Google Chrome installed, `npm i` done, and a fresh `npm run build`.
+// Requires: Chrome/Chromium (CHROME_PATH overrides the default macOS path),
+// `npm i` done, and a fresh `npm run build`.
 // Runs the built app in headless Chrome and walks the core flows end to end:
 // packs, Philidor page, My Games, gauntlet run with a correct move, a miss,
 // the relearn message, tree toggles, and a v6.3 export.
@@ -12,7 +13,7 @@ const server = spawn("npx", ["vite", "preview", "--port", "4189"], { stdio: "ign
 await new Promise((r) => setTimeout(r, 1500));
 
 const browser = await puppeteer.launch({
-  executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  executablePath: process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   headless: "new",
   args: ["--no-first-run", "--disable-extensions"],
 });
@@ -38,7 +39,7 @@ const step = (name, cond) => { assert.ok(cond, "FAILED: " + name); console.log("
 
 await page.goto("http://localhost:4189/", { waitUntil: "networkidle0" });
 step("app renders", await hasText("lines"));
-step("footer stamps v6.3·git", await hasText("v6.3·git"));
+step("footer stamps v6.3.1·git", await hasText("v6.3.1·git"));
 
 // packs view shows the new Philidor pack chip (in the shield family)
 await clickByText("Other defenses");
@@ -89,10 +90,22 @@ const tapSquare = async (name) => {
   assert.ok(done, "no board grid");
   await new Promise((r) => setTimeout(r, 250));
 };
-await tapSquare("e2"); await tapSquare("e4");
+await tapSquare("e2");
+const hints = await page.evaluate(() => ({
+  move: document.querySelectorAll('[data-hint="move"]').length,
+  capture: document.querySelectorAll('[data-hint="capture"]').length,
+}));
+step("selecting e2 dots its two legal squares", hints.move === 2 && hints.capture === 0);
+await tapSquare("e4");
 await new Promise((r) => setTimeout(r, 900));
 step("1.e4 played, opponent replied", await page.evaluate(() => document.body.innerText.includes("your move — from memory")));
 step("clean so far", await hasText("clean"));
+
+// selecting another own piece re-selects instead of counting as a miss
+await tapSquare("g1"); await tapSquare("b1");
+step("re-select is not a miss", !(await hasText("logged as a miss")));
+step("re-select shows the new piece's hints", await page.evaluate(() =>
+  document.querySelectorAll('[data-hint]').length === 2));
 
 // deliberately miss: tap a wrong move (a2-a3 will not match any script)
 await tapSquare("a2"); await tapSquare("a3");
