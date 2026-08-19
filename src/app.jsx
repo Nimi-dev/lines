@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { MEM, retrievability, foldResult, owned, seedFromConf } from "./scoring.js";
-import { sanList, analyzeGames, packGains } from "./games.js";
+import { sanList, analyzeGames, scorePct } from "./games.js";
+import { buildLineDoc, buildClusters, runStatus, grandfathered, learnNext, practiceNext } from "./learn.js";
 
 /* ---------- palette ---------- */
 const C = {
@@ -83,14 +84,14 @@ const ALIEN = {
   },
   danger: {
     eyebrow: "The danger · the tax on the dream",
-    headline: "If he stays calm, you are just worse.",
+    headline: "7...c5! — the calm try, still not enough.",
     base: null, baseCount: 13,
     plies: [
       { m: "c6c5", san: "7...c5!", note: "The refutation. Cold-blooded: hit the center, ignore the ghosts." },
       { m: "f3e5", san: "8.Ne5+", note: "Survival mode. Keep checking, keep pieces on the board." },
       { m: "f7e8", san: "8...Ke8", note: "He tucks the king and keeps developing." },
-      { m: "f1c4", san: "9.Bc4", note: "Aim at e6 — maximum practical pressure." },
-      { m: "e7e6", san: "9...e6", note: "Calmly blunted. ...Nc6 and ...cxd4 come next. He is simply up a piece." },
+      { m: "f1d3", san: "9.Bd3!", note: "The quiet killer — SF d25: +2.8. The bishop loads Bg6+ and the e5 knight waits for the fork." },
+      { m: "e7e6", san: "9...e6", note: "Blocking the diagonal — too late: 10.Bg6+! Ke7 11.Nf7 forks queen and rook, and the 'refuted' gambit collects the full point. Even the correct-looking defense (...c5 and the king walk back) loses at club level; the true engine refutation is far deeper — see Survival for the honest ledger." },
     ],
     ledgerTitle: "The bet, priced at your rating (1200–1400)",
     ledger: [
@@ -99,7 +100,7 @@ const ALIEN = {
       { label: "Find 7...c5 and consolidate", pct: 3, color: C.red },
     ],
     survivalTitle: "Survival plan — drill this cold",
-    survival: "Ne5+, then Bc4 aiming at e6. Keep queens on. Refuse trades. You are objectively worse — your job is to keep asking questions until he cracks.",
+    survival: "The honest ledger: against PERFECT defense (engine-only moves after 6...Kxf7) the gambit is objectively about −1.6 — this is a labeled practical weapon, not sound theory. At club level the compensation converts constantly: the king is loose, the ideas are yours, and every natural defensive move loses. Know both facts and choose it on purpose.",
     bailoutTitle: "The bailout fork — move 5",
     bailoutMoves: ["e2e4","c7c6","d2d4","d7d5","b1d2","d5e4","d2e4","g8f6","e4f6","e7f6"],
     bailoutLast: ["e7", "f6"],
@@ -1855,6 +1856,18 @@ const HOOVER = {
     bailoutLast: ["d4", "c6"],
     bailoutNote: "vs the annoying 4...Qf6: 5.Nxc6 dxc6 trades the tension away entirely — tiny edge, zero landmines.",
   },
+  lines: [
+    { t: "5...Nf6 — he develops into the kick.", baseCount: 9, plies: [
+      { m: "g8f6", san: "5...Nf6", note: "The natural developing move — into a queen that owns the center." },
+      { m: "e4e5", san: "6.e5!", note: "The kick with no answer: 6...Nd5 and 6...Ne4 both hang to the centralized queen, so the knight he just developed must undevelop. +1.7 by move six, and it is pure geometry — the queen on d4 was never loose, it was a landlord." },
+    ] },
+    { t: "5...b6 — the slow fianchetto.", baseCount: 9, plies: [
+      { m: "b7b6", san: "5...b6", note: "A plan for move twelve, played on move five." },
+      { m: "b1c3", san: "6.Nc3", note: "" },
+      { m: "c8b7", san: "6...Bb7", note: "" },
+      { m: "d4e5", san: "7.Qe5+!", note: "The centralized queen cashes the tempo: check and g7 attacked in one move. Blocking with the queen trades into an endgame two developing moves down; anything else drops g7 and the rook behind it. Slow plans lose to centralized pieces — this is why 5.Qxd4 was never 'exposing the queen'." },
+    ] },
+  ],
   drills: [
     { id: "hv1", kind: "move", plyCount: 8, from: "d1", to: "d4",
       prompt: "He traded on d4. Recapture — and know why it's free.",
@@ -1942,6 +1955,26 @@ const DECLINES = {
     bailoutLast: ["b1", "c3"],
     bailoutNote: "4.Nc3 — decline the endgame and keep a normal center game. The queen trade is a choice, not a duty; this square is where you choose.",
   },
+  lines: [
+    { t: "3...d5 — the central counter-thrust.", baseCount: 5, plies: [
+      { m: "d7d5", san: "3...d5?!", note: "He answers your break with his own — a tempo too late." },
+      { m: "f3e5", san: "4.Nxe5!", note: "Take with the KNIGHT: it wins the exchange war on e5 because his d5 pawn stopped guarding c6-squares fights. Now every recapture walks downhill for him." },
+      { m: "c6e5", san: "4...Nxe5", note: "" },
+      { m: "d4e5", san: "5.dxe5", note: "" },
+      { m: "d5e4", san: "5...dxe4", note: "The pawn grab that invites the familiar medicine —" },
+      { m: "d1d8", san: "6.Qxd8+", note: "— the queen trade, as a weapon. Same law as the 3...d6 decline: his king recaptures and loses castling forever." },
+      { m: "e8d8", san: "6...Kxd8", note: "" },
+      { m: "f1c4", san: "7.Bc4", note: "The identical skeleton one more time: king on d8, f7 tender, e-pawns split, your development free — and Stockfish already calls it +1.2. Three different declines, one punish. That is what a repertoire is." },
+    ] },
+    { t: "3...Nf6 — he counterattacks e4.", baseCount: 5, plies: [
+      { m: "g8f6", san: "3...Nf6", note: "Petroff instincts a move too late: the center is already open." },
+      { m: "d4e5", san: "4.dxe5!", note: "Take forward — his knight must jump into the fire to justify itself." },
+      { m: "f6e4", san: "4...Nxe4", note: "" },
+      { m: "d1d5", san: "5.Qd5!", note: "The double attack: e4 hangs, f7 trembles. One centralizing move asks two questions; no single reply answers both." },
+      { m: "e4c5", san: "5...Nc5", note: "The only try — saving the knight while blocking nothing." },
+      { m: "c1g5", san: "6.Bg5!", note: "Development WITH threat: f6 is coming, ...f6 weakens everything, and you still take back on e5 whenever you please. A pawn up in effect, two tempi up in fact." },
+    ] },
+  ],
   drills: [
     { id: "dc1", kind: "move", plyCount: 8, from: "d1", to: "d8",
       prompt: "He recaptured with the pawn. Use the file.",
@@ -1966,15 +1999,231 @@ const DECLINES = {
   ],
 };
 
+const SCANDI = {
+  id: "scandi", family: "shield", chip: "🗡 Scandinavian", badge: "🗡 SCANDINAVIAN · TAX THE EARLY QUEEN · WHITE",
+  chunks: { A: "Chunk A · The queen comes out", B: "Chunk B · Development for free", C: "Chunk C · The quiet clamp" },
+  chunkGoals: {
+    A: "He offers the d-pawn trade and recaptures with the QUEEN — the club main road. Every move you make from here attacks her.",
+    B: "Knight, pawn, knight, bishop: four developing moves, and two of them came with tempo on the wandering queen. He develops nothing meanwhile.",
+    C: "One quiet bishop move loads the battery: Nd5 and b4 tricks hang in the air forever. You are simply better, everywhere, calmly.",
+  },
+  dream: [
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
+    { m: "d7d5", san: "1...d5", chunk: "A", note: "The Scandinavian — 9% of your games. He challenges e4 before developing anything." },
+    { m: "e4d5", san: "2.exd5", chunk: "A", note: "Take. Everything else concedes the center argument." },
+    { m: "d8d5", san: "2...Qxd5", chunk: "A", note: "The club main road: the queen does the recapturing — and becomes a target for the rest of the opening." },
+    { m: "b1c3", san: "3.Nc3!", chunk: "B", anchor: true, note: "A developing move that attacks the queen.", why: { q: "Why is this knight worth more here than in any other opening?", a: "Because it develops WITH tempo: the queen must move again, so your knight is effectively free. Every tempo the early queen donates becomes a developing move you didn't pay for — count development, not material, and you're already winning the opening." } },
+    { m: "d5a5", san: "3...Qa5", chunk: "B", note: "The main square: pinning ambitions against your c3 knight." },
+    { m: "d2d4", san: "4.d4", chunk: "B", note: "The full center, for free." },
+    { m: "g8f6", san: "4...Nf6", chunk: "B", note: "" },
+    { m: "g1f3", san: "5.Nf3", chunk: "B", note: "" },
+    { m: "c7c6", san: "5...c6", chunk: "C", note: "His system move: an escape hatch for the queen, a wall for the b5 tricks." },
+    { m: "f1c4", san: "6.Bc4", chunk: "C", note: "The laser again — f7, the eternal customer." },
+    { m: "c8f5", san: "6...Bf5", chunk: "C", note: "His best piece develops — the only one that will." },
+    { m: "c1d2", san: "7.Bd2", chunk: "C", anchor: true, note: "The quiet clamp.", why: { q: "The bishop blocks nothing and attacks nothing. What did this move just load?", a: "The battery: your c3 knight now has Nd5! ideas — hitting the a5 queen through the d2 bishop's protection — and b4 gains more queen-tempo whenever you want it. Quiet moves that create two threats for later beat loud moves that make one now. SF: +0.6 and every piece of yours is better placed than every piece of his." } },
+  ],
+  promise: {
+    eyebrow: "The promise · move 7", headline: "Her third move. Your seventh piece.",
+    plyCount: 13, last: ["c1", "d2"], marks: ["a5", "d5"],
+    body: "Before you learn a single move: material is level, nothing is attacked — and White is simply better everywhere. Count the developed pieces and the queen moves. Where did his opening go?",
+    revealTitle: "7.Bd2",
+    reveal: "He spent moves 2, 3 and later 5 (…Qa5, and she'll move again) on ONE piece; you spent every move on a different one. The battery on the c3–a5 diagonal means Nd5 and b4 come with tempo forever. The Scandinavian is playable — the club version with the wandering queen just pays a permanent development tax.",
+    chip: "At club level the overwhelming majority of Scandinavian players recapture with the queen on move two.",
+  },
+  danger: {
+    eyebrow: "The edge case · the modest retreat", headline: "3...Qd8 — she goes home.",
+    base: ["e2e4","d7d5","e4d5","d8d5","b1c3"], baseCount: null,
+    plies: [
+      { m: "d5d8", san: "3...Qd8", note: "The humble admission: two moves spent, nothing gained." },
+      { m: "d2d4", san: "4.d4", note: "" },
+      { m: "g8f6", san: "4...Nf6", note: "" },
+      { m: "g1f3", san: "5.Nf3", note: "The full center, free development, and his position has no counterplay squares at all. Play Bc4, O-O, Re1, and push when ready — the honest best-play version is simply a better game with zero risk." },
+    ],
+    ledgerTitle: "How the queen answers 3.Nc3",
+    ledger: [
+      { label: "3...Qa5 — the main road", pct: 55, color: C.gold },
+      { label: "3...Qd8 — the retreat", pct: 25, color: C.red },
+      { label: "Other (…Qd6, …Qe5+?!)", pct: 20, color: C.muted },
+    ],
+    survivalTitle: "Against the sidelines",
+    survival: "3...Qd6 meets the same recipe: d4, Nf3, Bc4 — develop with tempo where she stands tall. 3...Qe5+?! 4.Be2 and she's moved three times to reach a worse square. The recipe never changes: hit the queen with developing moves only.",
+    bailoutTitle: "The keep-it-simple lane",
+    bailoutMoves: ["e2e4","d7d5","e4d5"],
+    bailoutLast: ["e4", "d5"],
+    bailoutNote: "There is no bailout needed — 2.exd5 is the road AND the safety. If he recaptures with the knight (2...Nf6), just develop: 3.d4 Nxd5 4.Nf3 and you have the center for free.",
+  },
+  drills: [
+    { id: "sc1", kind: "move", plyCount: 4, from: "b1", to: "c3",
+      prompt: "His queen took on d5. Develop like it's a check.",
+      hints: ["Which developing move attacks her?", "The knight's natural square IS the tempo."],
+      reason: "3.Nc3! — development with tempo: she moves again, you develop for free." },
+    { id: "sc2", kind: "move", plyCount: 12, from: "c1", to: "d2",
+      prompt: "He developed the f5 bishop. Load the quiet battery.",
+      hints: ["Think about what your c3 knight WANTS to do to the a5 queen.", "Protect the knight's dream square-jump first."],
+      reason: "7.Bd2 — now Nd5! and b4 gain tempo forever; the queen's whole life is running." },
+    { id: "sc3", kind: "goal",
+      prompt: "What is the Scandinavian queen recapture actually costing him?",
+      options: [
+        "Tempi — every attack on the queen is a free developing move, and development is the opening's only currency",
+        "Material — the queen will be trapped",
+        "Nothing — it's fully sound at every level",
+      ], correct: 0,
+      reason: "Count tempi, not threats. This transfers to every early-queen opening you'll ever face." },
+  ],
+};
+
+/* ============ BLACK REPERTOIRE ============ */
+const KPAWN = {
+  id: "kpawn", family: "black", side: "black", chip: "⚔ vs e4", badge: "⚔ AS BLACK · VS 1.E4",
+  chunks: { A: "Chunk A · The early queen", B: "Chunk B · The refutation", C: "Chunk C · The punished bishop" },
+  chunkGoals: {
+    A: "He brings the queen out on move two, aiming at f7 like everyone at this level. You meet it with developing moves that hit her.",
+    B: "One knight jump refutes the whole circus: it hits queen and c2 at once, and his 'attack' becomes your material.",
+    C: "The desperado bishop check is the last trick — your king steps up ONE square and his queen and bishop fall to a pawn fork.",
+  },
+  dream: [
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "Two thirds of your Black games start here." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "Your move — claim the center back, symmetric and honest." },
+    { m: "d1h5", san: "2.Qh5?!", chunk: "A", note: "The scholar's-mate try. You've faced this circus 17 times and scored 35% — after tonight it scores 0% against you." },
+    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "Defend e5 by developing. Never ...g6 first — mate on f7 must stay answered." },
+    { m: "f1c4", san: "3.Bc4", chunk: "A", note: "Loading Qxf7#. Now — and only now —" },
+    { m: "g7g6", san: "3...g6!", chunk: "A", note: "— hit the queen. f7 is covered by your king; the mate was always one defender short." },
+    { m: "h5f3", san: "4.Qf3", chunk: "B", note: "Re-aiming at f7 the slow way." },
+    { m: "g8f6", san: "4...Nf6!", chunk: "B", note: "Block the new mate threat by developing. Three of your pieces are out; one of his is — and it's the queen." },
+    { m: "f3b3", san: "5.Qb3?!", chunk: "B", note: "Third queen move: now she eyes b7 and f7. It looks scary. It loses." },
+    { m: "c6d4", san: "5...Nd4!", chunk: "B", anchor: true, note: "The refutation.", why: { q: "The knight abandons e5 and attacks a defended queen. Why is this winning?", a: "Count her safe squares: the knight hits the queen AND c2 (fork on the rook). If 6.Qc3 or 6.Qd3, then ...d5! and your lead is crushing; his only 'trick' is Bxf7+ — and you WANT him to play it. Refutations invite the desperado; they don't fear it. SF: −3.4 already." } },
+    { m: "c4f7", san: "6.Bxf7+?", chunk: "C", note: "The desperado — cashing the bishop with check before the ship sinks." },
+    { m: "e8e7", san: "6...Ke7!", chunk: "C", note: "One square up — NOT ...Kxf7?? when Qb3 recaptures the piece with check. The king is perfectly safe on e7; his two pieces are not." },
+    { m: "b3c4", san: "7.Qc4", chunk: "C", note: "Defending the bishop, dreaming of survival —" },
+    { m: "b7b5!", san: "7...b5!", chunk: "C", anchor: true, note: "The pawn fork ends it: queen and bishop share one diagonal and one fate. Whatever he saves, you take the other — a whole piece up, his queen having moved five times. SF: −4.3. The circus refuted, forever." },
+  ],
+  promise: {
+    eyebrow: "The promise · move 7", headline: "The scholar's mate, refuted for life.",
+    plyCount: 14, last: ["b7", "b5"], marks: ["c4", "f7"],
+    body: "Before you learn a single move: he played the attack every 1100 plays — early queen, bishop to c4, mate threats on f7. Black is now winning a full piece. Can you see the two hanging pieces?",
+    revealTitle: "7...b5!",
+    reveal: "Queen on c4 and bishop on f7 share the a2–g8 diagonal — and one pawn move attacks both through it. The whole refutation was three ideas: defend f7 while developing, hit the queen with developing moves only, and welcome the desperado check with ...Ke7. You will never lose to the scholar's circus again.",
+    chip: "You faced the early-queen circus 85 times and scored 49%. This line is worth more rating than any other 14 plies in this app.",
+  },
+  danger: {
+    eyebrow: "The main road · the Italian", headline: "2.Nf3 and 3.Bc4 — the grown-up version.",
+    base: ["e2e4","e7e5"], baseCount: null,
+    plies: [
+      { m: "g1f3", san: "2.Nf3", note: "The normal world: 58% of your games." },
+      { m: "b8c6", san: "2...Nc6", note: "" },
+      { m: "f1c4", san: "3.Bc4", note: "The Italian — his most common choice against you (106 games)." },
+      { m: "f8c5", san: "3...Bc5!", note: "The classical answer: your bishop takes the same diagonal, and f2 is as tender as f7." },
+      { m: "c2c3", san: "4.c3", note: "Preparing d4 — the main club plan." },
+      { m: "g8f6", san: "4...Nf6!", note: "Counterattack e4 before the center rolls." },
+      { m: "d2d4", san: "5.d4", note: "" },
+      { m: "e5d4", san: "5...exd4", note: "" },
+      { m: "c3d4", san: "6.cxd4", note: "" },
+      { m: "c5b4+", san: "6...Bb4+!", note: "The check that buys time: he must deal with this before pushing you off the board." },
+      { m: "c1d2", san: "7.Bd2", note: "The sane block. (7.Nc3?! is the Møller gambit — your own White repertoire plays it! As Black, take the pawn only if you know 9.d5 Bf6!; otherwise this line never arises.)" },
+      { m: "b4d2+", san: "7...Bxd2+", note: "" },
+      { m: "b1d2", san: "8.Nbxd2", note: "" },
+      { m: "d7d5!", san: "8...d5!", note: "THE freeing break — memorize this one move above all: it splits his center before it becomes a monster." },
+      { m: "e4d5", san: "9.exd5", note: "" },
+      { m: "f6d5", san: "9...Nxd5", note: "Full equality, better structure, and every piece of yours has a job: ...O-O, ...Be6 or ...Nb6, rooks to e8/d8. From equal, at your level, the better-developed player wins — and that's you now." },
+    ],
+    ledgerTitle: "What White plays against your 1...e5",
+    ledger: [
+      { label: "2.Nf3 — the normal world", pct: 58, color: C.gold },
+      { label: "2.Qh5 / 2.Bc4 / 2.Qf3 — the circus", pct: 18, color: C.red },
+      { label: "Other (2.Nc3, 2.d4, 2.f4)", pct: 24, color: C.muted },
+    ],
+    survivalTitle: "Against the rest",
+    survival: "2.Nc3: play 2...Nf6 and develop symmetrically. 2.d4 exd4 3.Qxd4?! Nc6! — the queen-tempo law again, now working for you. 2.f4?! exf4 and hold the pawn calmly with ...Nf6, ...d6.",
+    bailoutTitle: "The one rule",
+    bailoutMoves: ["e2e4","e7e5"],
+    bailoutLast: ["e7", "e5"],
+    bailoutNote: "Whatever White plays: develop toward f2, meet every early queen move with a developing attack on her, and never grab material while behind in development. Your +1 as Black is his impatience.",
+  },
+  lines: [
+    { t: "3.Bb5 — the Spanish.", base: ["e2e4","e7e5"], plies: [
+      { m: "g1f3", san: "2.Nf3", note: "" },
+      { m: "b8c6", san: "2...Nc6", note: "" },
+      { m: "f1b5", san: "3.Bb5", note: "The Spanish — 41 of your games, 41% score. It needs no refuting, only a system." },
+      { m: "a7a6", san: "3...a6!", note: "The little question: take or retreat?" },
+      { m: "b5a4", san: "4.Ba4", note: "" },
+      { m: "g8f6", san: "4...Nf6", note: "Develop and hit e4 — his bishop drifted offside to keep itself alive." },
+      { m: "e1g1,h1f1", san: "5.O-O", note: "" },
+      { m: "f8e7", san: "5...Be7", note: "The closed Spanish setup: next ...b5, ...d6, ...O-O — same three moves every game. He got a name-brand opening; you got a plan that never changes. Equal, solid, and you know what to do while he wonders." },
+    ] },
+  ],
+  drills: [],
+};
+
+const QPAWN = {
+  id: "qpawn", family: "black", side: "black", chip: "🧱 vs d4", badge: "🧱 AS BLACK · VS 1.D4",
+  chunks: { A: "Chunk A · The London wall", B: "Chunk B · The b2 tax", C: "Chunk C · The endgame you chose" },
+  chunkGoals: {
+    A: "He plays the London — your worst enemy: 44 games, 32%. Its whole system has exactly one unpaid bill: the b2 pawn behind the wandering dark bishop.",
+    B: "Queen to b6, hitting what the bishop left home. Every London player faces this; almost none under 1400 knows the answer.",
+    C: "Chase the queen trade on YOUR terms: the a-file opens for your rook and his 'system' is out of moves that help.",
+  },
+  dream: [
+    { m: "d2d4", san: "1.d4", chunk: "A", note: "A fifth of your Black games." },
+    { m: "d7d5", san: "1...d5", chunk: "A", note: "Your move — the classical claim." },
+    { m: "c1f4", san: "2.Bf4", chunk: "A", note: "The London: his most common AND your worst-scoring line as Black. That ends tonight." },
+    { m: "c7c5!", san: "2...c5!", chunk: "A", anchor: true, note: "Strike the base immediately.", why: { q: "Why hit d4 before developing a single piece?", a: "Because the London's bishop left b2 unguarded to sit on f4 — and ...c5 opens the exact diagonal (b6–b2) your queen will use to tax it. Systems have fixed weaknesses; this is the London's, and it must be attacked BEFORE he finishes the wall with c3 and Nd2-f3." } },
+    { m: "e2e3", san: "3.e3", chunk: "B", note: "The system continues on autopilot —" },
+    { m: "b8c6", san: "3...Nc6", chunk: "B", note: "— develop with pressure on d4." },
+    { m: "c2c3", san: "4.c3", chunk: "B", note: "Guarding d4, entombing his own queenside knight." },
+    { m: "d8b6!", san: "4...Qb6!", chunk: "B", anchor: true, note: "The tax collector arrives: b2 is attacked, and the f4 bishop cannot come home to pay." },
+    { m: "d1b3", san: "5.Qb3", chunk: "C", note: "The standard defense: offering the trade to cover b2." },
+    { m: "c5c4!", san: "5...c4!", chunk: "C", anchor: true, note: "The move that wins the queen trade argument: his queen must take on b6 (retreating drops b2 after all), and YOUR recapture improves YOUR position." },
+    { m: "b3b6", san: "6.Qxb6", chunk: "C", note: "" },
+    { m: "a7b6", san: "6...axb6", chunk: "C", note: "Look at what the 'ruined' pawns bought: the a-file belongs to your rook already, ...b5-b4 is a plan that plays itself, and SF calls this −0.36 — BLACK is better on move six against the system that scored 68% against you. The doubled pawns aren't damage; they're a lever." },
+  ],
+  promise: {
+    eyebrow: "The promise · move 6", headline: "The London, taxed and closed.",
+    plyCount: 12, last: ["a7", "b6"], marks: ["a8", "b2"],
+    body: "Before you learn a single move: queens are off, it's move six, and Black — you — is already better against the London System. Where did his 68% score against you go?",
+    revealTitle: "6...axb6",
+    reveal: "It went into the b2 pawn his bishop abandoned. ...c5, ...Qb6 and ...c4 forced a queen trade that opened YOUR a-file and fixed YOUR plan (...b5-b4) while his 'system' has no move that helps. You'll play this exact sequence dozens of times — it works every time, because the London never changes.",
+    chip: "The London is your single worst-scoring opening as Black: 44 games, 32%. This line flips it.",
+  },
+  danger: {
+    eyebrow: "The main road · the Queen's Gambit", headline: "2.c4 — the real opening.",
+    base: ["d2d4","d7d5"], baseCount: null,
+    plies: [
+      { m: "c2c4", san: "2.c4", note: "The Queen's Gambit — 43 of your games. Respectable, and calmly declined." },
+      { m: "e7e6", san: "2...e6!", note: "The QGD: solid for 150 years of world championships. You will not out-theory anyone; you will out-structure them." },
+      { m: "b1c3", san: "3.Nc3", note: "" },
+      { m: "g8f6", san: "3...Nf6", note: "" },
+      { m: "c1g5", san: "4.Bg5", note: "The classical pin." },
+      { m: "f8e7", san: "4...Be7", note: "Break the pin before it exists." },
+      { m: "e2e3", san: "5.e3", note: "" },
+      { m: "e8g8,h8f8", san: "5...O-O", note: "King safe by move five — half of chess at this level." },
+      { m: "g1f3", san: "6.Nf3", note: "" },
+      { m: "b8d7", san: "6...Nbd7!", note: "The QGD tabiya. Your plans, in order: ...c6 (the wall), then EITHER ...dxc4 and ...b5 (grab and expand) OR ...Ne4 (trade into freedom). Same setup every game, against 1400s and 2400s alike. Solid is a weapon when the other side needs to prove something." },
+    ],
+    ledgerTitle: "What White plays after 1.d4 d5",
+    ledger: [
+      { label: "2.Bf4 — the London (your worst line)", pct: 28, color: C.red },
+      { label: "2.c4 — the Queen's Gambit", pct: 27, color: C.gold },
+      { label: "Other (2.e3, 2.Nf3, 2.Nc3)", pct: 45, color: C.muted },
+    ],
+    survivalTitle: "Against the rest",
+    survival: "2.e3 or 2.Nf3 systems: the London recipe works anyway — ...c5, ...Nc6, ...Qb6 whenever the dark bishop leaves home or the b2 pawn is loose; otherwise develop as in the QGD. 2.Nc3: 2...Nf6 3.Bf4 c5! same tax.",
+    bailoutTitle: "The one rule",
+    bailoutMoves: ["d2d4","d7d5"],
+    bailoutLast: ["d7", "d5"],
+    bailoutNote: "Against d4-systems the plan beats the moves: strike with ...c5, ask the b2 question when the bishop wanders, castle by move six. You know the plan now; he only knows the moves.",
+  },
+  drills: [],
+};
+
 const FAMILIES = [
   { id: "scotch", rep: true, label: "♟ Scotch", blurb: "Your main White repertoire: one door — 3.d4 — every good Black answer met to a tabiya. Follow the ⇄ morphs; branches merge." },
   { id: "shield", rep: true, label: "🛡 Other defenses", blurb: "Deterministic answers to his other openings — Petroff, Sicilian, Caro-Kann. Zero overlap with the Scotch: one position, one move, always." },
-  { id: "black", rep: true, label: "⬛ As Black", blurb: "" },
+  { id: "black", rep: true, label: "⬛ As Black", blurb: "Your Black repertoire — vs 1.e4 and 1.d4. Learn and drill these in the Learn tab and the gauntlet; the story rooms are White-side only for now." },
   { id: "italian", rep: false, label: "🏛 Italian", blurb: "⚔ Off-repertoire: these answer 2...Nc6 with 3.Bc4 where your repertoire plays 3.d4. Study pieces and surprise weapons — don't drill them the same week as the repertoire." },
   { id: "knights", rep: false, label: "🐴 Four Knights", blurb: "⚔ Off-repertoire: 3.Nc3 collides with your 3.d4 — and these two even collide with each other at move 4. Museum pieces with teeth." },
 ];
 
-const PACKS = [MIESES, CLASSICAL, STEINITZ, HOOVER, DECLINES, SCOTCH, GRECO, MOLLER, SPEAR, LANGE, FRIED, LEGAL, MIRROR, HALLO, ALIEN, MORRA, PETROFF, RUSSIAN, PHILIDOR, HANHAM, BUSCH];
+const PACKS = [MIESES, CLASSICAL, STEINITZ, HOOVER, DECLINES, SCOTCH, GRECO, MOLLER, SPEAR, LANGE, FRIED, LEGAL, MIRROR, HALLO, ALIEN, MORRA, PETROFF, RUSSIAN, PHILIDOR, HANHAM, SCANDI, KPAWN, QPAWN, BUSCH];
 
 
 
@@ -2185,6 +2434,15 @@ const EXTRAS = {
         note: "Same answer. Be3 is right against every Hanham setup because it develops, guards d4 and points at the queenside where his hole is — a setup you can play from memory of the SHAPE rather than the moves." },
     ],
   },
+  scandi: {
+    hints: {
+      A: "Trade in the center, then treat every queen sighting as a gift: your developing moves double as attacks.",
+      B: "Knight, pawn, knight — natural squares only. The tempo count is the scoreboard: check it every move.",
+      C: "The quiet Bd2 loads Nd5 and b4 forever. You never need to hurry; every trade and every tempo favors you.",
+    },
+    finalWhy: "Count the ledger: his queen has moved twice (soon three times), your minor pieces all stand developed on natural squares, and the Nd5/b4 battery generates threats for free, forever. No tactic needed — the Scandinavian queen recapture pays a development tax that never gets refunded.",
+    futures: [],
+  },
   petroff: {
     hints: {
       A: "He copies. Take first, and remember: the refutation is about ORDER, not about the capture itself.",
@@ -2370,7 +2628,8 @@ const EXTRAS = {
 };
 /* ============ THE REPERTOIRE TREE — every Scotch line merged, keyed by position ============ */
 const posKey = (b, turn) => b.map((x) => x || ".").join("") + turn;
-const buildRep = (packIds) => {
+const buildRep = (packIds, side = "white") => {
+  const userPly = side === "black" ? 1 : 0;
   const lines = [];
   for (const p of PACKS.filter((x) => packIds.includes(x.id))) {
     lines.push({ packId: p.id, kind: "dream", plies: p.dream.map((d) => ({ m: d.m, san: d.san })) });
@@ -2381,6 +2640,11 @@ const buildRep = (packIds) => {
     const g = p.danger;
     const base = (g.base || p.dream.slice(0, g.baseCount).map((d) => d.m)).map((m, i) => ({ m, san: g.base ? "" : p.dream[i].san }));
     lines.push({ packId: p.id, kind: "edge", plies: [...base, ...g.plies.map((d) => ({ m: d.m, san: d.san }))] });
+    // extra scripted edge lines beyond the featured danger (coverage branches)
+    for (const x of (p.lines || [])) {
+      const xb = (x.base || p.dream.slice(0, x.baseCount).map((d) => d.m)).map((m, i) => ({ m, san: x.base ? "" : p.dream[i].san }));
+      lines.push({ packId: p.id, kind: "edge", t: x.t, plies: [...xb, ...x.plies.map((d) => ({ m: d.m, san: d.san }))] });
+    }
   }
   const user = {}, opp = {}, term = {}, zones = {};
   const zoneAdd = (key, id) => { zones[key] = zones[key] || []; if (!zones[key].includes(id)) zones[key].push(id); };
@@ -2390,7 +2654,7 @@ const buildRep = (packIds) => {
       const key = posKey(b, k % 2);
       zoneAdd(key, L.packId);
       const { m, san } = L.plies[k];
-      if (k % 2 === 0) {
+      if (k % 2 === userPly) {
         const prev = user[key];
         user[key] = { m, san: san || (prev && prev.san) || "", packId: L.packId };
       } else {
@@ -2407,14 +2671,14 @@ const buildRep = (packIds) => {
 };
 
 /* enumerate every distinct run through the tree; weight branches by runs beneath them */
-const buildRepx = (rep) => {
+const buildRepx = (rep, userPly = 0) => {
   const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
   const weight = {}; const memo = {};
   const count = (b, k) => {
     const kk = posKey(b, k % 2);
     if (memo[kk] != null) return memo[kk];
     let total = 1;
-    if (k % 2 === 0) {
+    if (k % 2 === userPly) {
       const u = rep.user[kk];
       total = u ? count(applyTok(b, u.m), k + 1) : 1;
     } else {
@@ -2431,7 +2695,7 @@ const buildRepx = (rep) => {
   const paths = [];
   const dfs = (b, k, sans, ukeys, toks) => {
     const kk = posKey(b, k % 2);
-    if (k % 2 === 0) {
+    if (k % 2 === userPly) {
       const u = rep.user[kk];
       if (!u) { const t = rep.term[kk] || {}; paths.push({ sans, userKeys: ukeys, toks, packId: t.packId, kind: t.kind, t: t.t, note: t.note }); return; }
       dfs(applyTok(b, u.m), k + 1, [...sans, u.san], [...ukeys, kk], [...toks, u.m]);
@@ -2447,6 +2711,7 @@ const buildRepx = (rep) => {
 
 /* ============ THE RUNS — every path gets a code, a name, a record ============ */
 const buildRuns = (packIds, repx) => {
+  // (side is uniform within a tree; runs carry it for the UI/gauntlet)
   const fam = PACKS.filter((p) => packIds.includes(p.id)).map((p) => p.id);
   const kindRank = { dream: 0, future: 1, edge: 2 };
   const hash = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); };
@@ -2472,7 +2737,7 @@ const buildRuns = (packIds, repx) => {
       : pt.t || (pt.kind === "edge" ? ((pk.danger || {}).headline || "edge case") : "deep water");
     const glyph = pt.kind === "edge" ? "⚠" : pt.kind === "future" ? "✦✦" : "✦";
     const sig = hash((pt.packId || "?") + "|" + (pt.kind || "?") + "|" + pt.sans.filter(Boolean).join(" "));
-    return { ...pt, id, label, glyph, sig, uCount: pt.userKeys.length, chip: pk.chip || "" };
+    return { ...pt, id, label, glyph, sig, uCount: pt.userKeys.length, chip: pk.chip || "", side: (pk.side || "white") };
   }).map((r, _, all) => {
     // transpositions can land two paths on the same leaf label — tag each twin with its divergence move
     const twins = all.filter((o) => o.label === r.label && o.packId === r.packId && o.kind === r.kind);
@@ -2486,15 +2751,23 @@ const buildRuns = (packIds, repx) => {
 };
 
 /* the gauntlet tree is built from the core repertoire plus any learned packs */
-const buildTree = (packIds) => {
-  const rep = buildRep(packIds);
-  const repx = buildRepx(rep);
-  return { REP: rep, REPX: repx, RUNS: buildRuns(packIds, repx), packIds };
+const buildTree = (packIds, side = "white") => {
+  const userPly = side === "black" ? 1 : 0;
+  const rep = buildRep(packIds, side);
+  const repx = buildRepx(rep, userPly);
+  return { REP: rep, REPX: repx, RUNS: buildRuns(packIds, repx), packIds, side, userPly };
 };
 const CORE_PACK_IDS = PACKS.filter((p) => p.family === "scotch").map((p) => p.id);
-const LEARNABLE_PACK_IDS = ["petroff", "russian", "philidor", "hanham"]; // shield packs that can join the gauntlet once learned
+const LEARNABLE_PACK_IDS = ["petroff", "russian", "philidor", "hanham", "scandi", "alien"]; // shield packs learnable into the gauntlet
+const BLACK_PACK_IDS = ["kpawn", "qpawn"]; // the Black repertoire (side: "black")
 const DEFAULT_TREE = buildTree(CORE_PACK_IDS);
 const REP = DEFAULT_TREE.REP, REPX = DEFAULT_TREE.REPX, RUNS = DEFAULT_TREE.RUNS;
+/* v6.4: ONE fixed tree everywhere (ids/sigs stable); what varies per user is the
+   LEARNED set — only learned lines enter the daily gauntlet session. */
+const FULL_TREE = buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]);
+const FULL_TREE_B = buildTree(BLACK_PACK_IDS, "black");
+const ALL_RUNS = [...FULL_TREE.RUNS, ...FULL_TREE_B.RUNS];
+const treeOf = (run) => (run && run.side === "black" ? FULL_TREE_B : FULL_TREE);
 
 const dayStr = (d) => {
   const x = d || new Date();
@@ -3639,10 +3912,10 @@ function EdgeCases({ pack, go, switchPack }) {
 const GKEY = "lines-gauntlet-v1";
 const GKEY2 = "lines-gauntlet-v2";
 const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
-const TREEKEY = "lines-tree-v1";   // learned packs added to the gauntlet tree
+const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.4·git";
+const APP_VER = "v6.5·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -3665,6 +3938,68 @@ const SAVER = (() => {
     subscribe: (f) => { subs.add(f); return () => subs.delete(f); },
   };
 })();
+/* learned-lines state: which runs have passed the Learn gate (walk + one clean
+   try). Learned admits a line to the gauntlet; it is NOT memory evidence. */
+const LEARNKEY = "lines-learn-v1";
+const LEARN = (() => {
+  let st = { learned: {}, walked: {} };
+  let loaded = false;
+  const subs = new Set();
+  const notify = () => subs.forEach((f) => { try { f(); } catch (e) {} });
+  const save = () => { try { if (STORE) STORE.set(LEARNKEY, JSON.stringify(st)); } catch (e) {} };
+  return {
+    state: () => st,
+    load: async () => {
+      if (loaded) return; loaded = true;
+      try { const r = STORE && (await STORE.get(LEARNKEY)); if (r && r.value) st = { learned: {}, walked: {}, ...JSON.parse(r.value) }; } catch (e) {}
+      notify();
+    },
+    markWalked: (sig) => { if (!st.walked[sig]) { st = { ...st, walked: { ...st.walked, [sig]: Date.now() } }; save(); notify(); } },
+    markLearned: (sig) => { if (!st.learned[sig]) { st = { learned: { ...st.learned, [sig]: Date.now() }, walked: { ...st.walked, [sig]: st.walked[sig] || Date.now() } }; save(); notify(); } },
+    replace: (learned) => { st = { ...st, learned: learned || {} }; save(); notify(); },
+    subscribe: (f) => { subs.add(f); return () => subs.delete(f); },
+  };
+})();
+
+/* shared games analysis: one computation over the cached chess.com games, used
+   by Learn (what next), Practice (what's urgent) and the My Games view. */
+const GAMESTATS = (() => {
+  let res = null, games = null, status = "idle";
+  const subs = new Set();
+  const notify = () => subs.forEach((f) => { try { f(); } catch (e) {} });
+  const compute = () => {
+    if (!games || !games.length) return;
+    const H = { sq, posKey, START };
+    const w = analyzeGames(FULL_TREE, H, games);
+    const b = analyzeGames(FULL_TREE_B, H, games, { side: "black" });
+    const cut = Date.now() - 30 * 86400000;
+    const rw = games.filter((g) => g.white && (g.t || 0) * 1000 >= cut);
+    const rb = games.filter((g) => !g.white && (g.t || 0) * 1000 >= cut);
+    res = { w, b, runProb: { ...w.runProb, ...b.runProb },
+      recentWhiteScore: scorePct(rw), recentWhiteN: rw.length,
+      recentBlackScore: scorePct(rb), recentBlackN: rb.length };
+  };
+  return {
+    res: () => res,
+    status: () => status,
+    load: async () => {
+      if (status !== "idle") return;
+      status = "loading";
+      try {
+        const c = STORE && (await STORE.get(CCCACHE));
+        if (c && c.value) {
+          const d = JSON.parse(c.value);
+          games = Object.values(d.months || {}).flat().map((g) => ({ white: !!g.w, s: g.s, r: g.r, t: g.t, url: g.url }));
+          compute();
+        }
+      } catch (e) {}
+      status = "ready"; notify();
+    },
+    setGames: (recs) => { games = recs.map((g) => ({ white: !!g.w, s: g.s, r: g.r, t: g.t, url: g.url })); compute(); status = "ready"; notify(); },
+    subscribe: (f) => { subs.add(f); return () => subs.delete(f); },
+  };
+})();
+
 /* mastery model v2 — spacing owns the crown, volume earns respect.
    First clean hand-play of a day: c += GAIN_DAY*(1-c) (may cross the proven line).
    Same-day clean repeats: c += GAIN_REP*(1-c), CAPPED at REP_CEIL — volume differentiates
@@ -3784,7 +4119,7 @@ function CalCard({ days, runsN }) {
   );
 }
 
-function Gauntlet({ onExit }) {
+function Gauntlet({ onExit, onLearn }) {
   const [mode, setMode] = useState("home"); // home | run | done
   const [loaded, setLoaded] = useState(false);
   const [days, setDays] = useState({});
@@ -3809,23 +4144,19 @@ function Gauntlet({ onExit }) {
   const [impTxt, setImpTxt] = useState("");
   const [, bumpSave] = useState(0);
   useEffect(() => SAVER.subscribe(() => bumpSave((x) => x + 1)), []);
-  const [learnedPacks, setLearnedPacks] = useState([]);
-  const T = useMemo(() => (learnedPacks.length ? buildTree([...CORE_PACK_IDS, ...learnedPacks]) : DEFAULT_TREE), [learnedPacks]);
-  const togglePack = (id) => setLearnedPacks((L) => {
-    const nl = L.includes(id) ? L.filter((x) => x !== id) : [...L, id];
-    try { if (STORE) STORE.set(TREEKEY, JSON.stringify(nl)); } catch (e) {}
-    return nl;
-  });
+  const T = FULL_TREE;
+  const [, bumpLearn] = useState(0);
+  useEffect(() => LEARN.subscribe(() => bumpLearn((x) => x + 1)), []);
+  const [, bumpGS] = useState(0);
+  useEffect(() => { GAMESTATS.load(); return GAMESTATS.subscribe(() => bumpGS((x) => x + 1)); }, []);
+  const learnedRuns = useMemo(() => ALL_RUNS.filter((r) => LEARN.state().learned[r.sig]), [LEARN.state()]);
+  const learnedPos = useMemo(() => { const set = new Set(); for (const r of learnedRuns) r.userKeys.forEach((k2) => set.add(k2)); return set; }, [learnedRuns]);
   const shownRef = useRef(Date.now());
 
   // persistence (v2 schema; migrates v1 lifetime stats on first load)
   useEffect(() => {
     (async () => {
       let got = false;
-      try {
-        const rt = STORE && (await STORE.get(TREEKEY));
-        if (rt && rt.value) setLearnedPacks(JSON.parse(rt.value).filter((id) => LEARNABLE_PACK_IDS.includes(id)));
-      } catch (e) {}
       try {
         const r3 = STORE && (await STORE.get(GKEY3));
         if (r3 && r3.value) {
@@ -3841,10 +4172,18 @@ function Gauntlet({ onExit }) {
       } catch (e) {}
       // v6.3 is a deliberate fresh start: v1/v2 saved state is not auto-loaded.
       // Old exports still restore (best-effort seed) through the Restore box.
+      await LEARN.load();
       setLoadInfo(got ? "restored" : "fresh start (v6.3)");
       setLoaded(true);
     })();
   }, []);
+  // grandfather: practice history proves a line — recorded day-plays or full
+  // memory evidence mark it learned without re-walking the Learn flow.
+  useEffect(() => {
+    if (!loaded) return;
+    const st = LEARN.state();
+    for (const r of ALL_RUNS) if (!st.learned[r.sig] && grandfathered(r, days, conf)) LEARN.markLearned(r.sig);
+  }, [loaded]);
   // checkpoint saves: instant off-run, slow-debounced during a run (storage is rate-limited;
   // a save per board move floods it and later writes fail silently — the original zeroing bug)
   useEffect(() => {
@@ -3854,22 +4193,23 @@ function Gauntlet({ onExit }) {
 
   const today = dayStr();
   const todays = days[today] || { plays: {} };
-  const order = useMemo(() => daySeedOrder(today, T.RUNS.length), [today]);
-  const session = useMemo(() => order.map((ix) => T.RUNS[ix]), [order]);
+  const order = useMemo(() => daySeedOrder(today, learnedRuns.length), [today, learnedRuns.length]);
+  const session = useMemo(() => order.map((ix) => learnedRuns[ix]).filter(Boolean), [order, learnedRuns]);
   const playedN = Object.keys(todays.plays).length;
   const cleanN = session.filter((r) => todays.plays[r.sig] && todays.plays[r.sig].m === 0).length;
   const stumbles = session.filter((r) => { const pl = todays.plays[r.sig]; return pl && pl.m > 0 && !pl.fx; });
   const nextUp = session.find((r) => !todays.plays[r.sig]) || stumbles[0] || null;
-  const redoPhase = playedN >= T.RUNS.length && stumbles.length > 0;
+  const redoPhase = playedN >= session.length && session.length > 0 && stumbles.length > 0;
 
-  const cur = curSig ? T.RUNS.find((r) => r.sig === curSig) : null;
+  const cur = curSig ? ALL_RUNS.find((r) => r.sig === curSig) : null;
+  const up = cur && cur.side === "black" ? 1 : 0; // the user's ply parity in the current run
   const pieces = useMemo(() => applyMoves(hist), [hist]);
   const k = hist.length;
   const key = posKey(pieces, k % 2);
   const lastTok = hist.length ? hist[hist.length - 1] : null;
 
   const startRun = (sg) => {
-    const run = T.RUNS.find((r) => r.sig === sg);
+    const run = ALL_RUNS.find((r) => r.sig === sg);
     const lastJ = run.userKeys.length - 1;
     const now = Date.now();
     // v6.3: performance-gated — fast-forward whatever the model predicts you still
@@ -3928,15 +4268,15 @@ function Gauntlet({ onExit }) {
       const t = setTimeout(endRun, 550);
       return () => clearTimeout(t);
     }
-    if (k % 2 === 0 && ffPlan[k / 2] === "ff") {
+    if (k % 2 === up && ffPlan[(k - up) / 2] === "ff") {
       const t = setTimeout(() => {
         setHist((h) => [...h, cur.toks[k]]);
         setSans((x) => [...x, cur.sans[k] || ""]);
       }, 260);
       return () => clearTimeout(t);
     }
-    if (k % 2 === 1) {
-      const fast = k > 0 && ffPlan[(k - 1) / 2] === "ff";
+    if (k % 2 !== up) {
+      const fast = k > 0 && ffPlan[(k - 1 - up) / 2] === "ff";
       const t = setTimeout(() => {
         setHist((h) => [...h, cur.toks[k]]);
         setSans((x) => [...x, cur.sans[k] || ""]);
@@ -3947,7 +4287,7 @@ function Gauntlet({ onExit }) {
   }, [mode, k]);
 
   useEffect(() => { shownRef.current = Date.now(); }, [key]);
-  const expected = cur && mode === "run" && k % 2 === 0 && k < cur.toks.length && ffPlan[k / 2] !== "ff"
+  const expected = cur && mode === "run" && k % 2 === up && k < cur.toks.length && ffPlan[(k - up) / 2] !== "ff"
     ? { m: cur.toks[k], san: cur.sans[k] || "" } : null;
   const expFT = expected ? fromTo(expected.m) : null;
 
@@ -3957,10 +4297,11 @@ function Gauntlet({ onExit }) {
   const onTap = (name) => {
     if (!expected) return;
     const pc = pieces[sq(name)];
-    if (!sel) { if (pc && pc === pc.toUpperCase()) setSel(name); return; }
+    const own = (p2) => p2 && (up === 1 ? p2 === p2.toLowerCase() : p2 === p2.toUpperCase());
+    if (!sel) { if (own(pc)) setSel(name); return; }
     if (sel === name) { setSel(null); return; }
     // switching to another of your own pieces is a re-selection, never a move
-    if (pc && pc === pc.toUpperCase()) { setSel(name); return; }
+    if (own(pc)) { setSel(name); return; }
     if (sel + name === expFT[0] + expFT[1]) {
       const door = k === 0 ? "start" : (sans[k - 1] || "?");
       if (miss === 0) { setHit((h) => ({ ...h, [key]: true })); bumpConf(key, true, door, Date.now() - shownRef.current); }
@@ -3999,12 +4340,12 @@ function Gauntlet({ onExit }) {
   // built for hypothesis-hunting rather than debugging.
   const buildExport = () => {
     const positions = {};
-    for (const r of T.RUNS) r.userKeys.forEach((k2, j2) => {
-      if (!positions[k2]) positions[k2] = { at: r.id + "@" + (j2 + 1), move: (T.REP.user[k2] || {}).san || "?", runs: [] };
+    for (const r of ALL_RUNS) r.userKeys.forEach((k2, j2) => {
+      if (!positions[k2]) positions[k2] = { at: r.id + "@" + (j2 + 1), move: (treeOf(r).REP.user[k2] || {}).san || "?", runs: [] };
       if (positions[k2].runs.indexOf(r.id) < 0) positions[k2].runs.push(r.id);
     });
     const runsDict = {};
-    T.RUNS.forEach((r) => { runsDict[r.sig] = { id: r.id, label: r.label, pack: r.packId, kind: r.kind, moves: r.sans.filter(Boolean).join(" ") }; });
+    ALL_RUNS.forEach((r) => { runsDict[r.sig] = { id: r.id, label: r.label, pack: r.packId, kind: r.kind, side: r.side, moves: r.sans.filter(Boolean).join(" ") }; });
     const mastery = {};
     const nowX = Date.now();
     Object.keys(conf).forEach((k2) => {
@@ -4026,17 +4367,18 @@ function Gauntlet({ onExit }) {
     });
     return {
       _schema: "v6.3 memory model. mastery[pos]: H=stability half-life (days); last=last hand-test; R=predicted retrievability at export, R=2^(-days/H) (owned>=0.8 fast-forwards; a miss opens relearn until one clean hand-play). On success H*=1+2.2*(1-R) — gain indexed on the model's own prediction. ev=[minuteEpoch,clean,door,latencyMs] event log (newest last, capped). via[door]=[handEncounters,misses] keyed by the opponent move that led in. days[date].plays[run]={m:misses,u:handMoves,ff:fastForwarded,fx:fixedOnRedo}. Positions labeled runId@userPlyIndex.",
-      meta: { app: APP_VER, exported: new Date().toISOString(), runs: T.RUNS.length, positions: T.REP.totalUser, lifetime: { runs: lifeRuns, clean: lifeClean } },
+      meta: { app: APP_VER, exported: new Date().toISOString(), runs: ALL_RUNS.length, positions: FULL_TREE.REP.totalUser + FULL_TREE_B.REP.totalUser, lifetime: { runs: lifeRuns, clean: lifeClean } },
       runs: runsDict,
       mastery,
       days: daysX,
+      learn: { learned: LEARN.state().learned },
     };
   };
   const doImport = (txt) => {
     try {
       const d = JSON.parse(txt);
       const at2key = {}, id2sig = {};
-      for (const r of T.RUNS) {
+      for (const r of ALL_RUNS) {
         id2sig[r.id] = r.sig;
         r.userKeys.forEach((k2, j2) => { const at = r.id + "@" + (j2 + 1); if (!at2key[at]) at2key[at] = k2; });
       }
@@ -4063,6 +4405,7 @@ function Gauntlet({ onExit }) {
         setConf(nc); setDays(nd); setHit(nh); setMissedPos(nm);
         const lt = (d.meta || {}).lifetime || {};
         setLifeRuns(lt.runs || 0); setLifeClean(lt.clean || 0);
+        if (d.learn && d.learn.learned) LEARN.replace(d.learn.learned);
         return `restored ${Object.keys(nc).length} positions across ${Object.keys(nd).length} day(s) — saving now.`;
       }
       return "unrecognized format — paste a full training-log export.";
@@ -4092,17 +4435,17 @@ function Gauntlet({ onExit }) {
         Same tree. Fresh order. Every day.
       </h2>
       <p style={{ fontSize: 14.5, lineHeight: 1.6, color: C.cream, margin: 0 }}>
-        All {T.RUNS.length} runs in today’s order. Whatever the model predicts you still remember fast-forwards — knowledge is acknowledged at the speed it’s demonstrated, and only time decays it. A payoff move is always yours. Misses wait at the end; a crack in owned ground is the flag that matters.
+        {session.length ? `All ${session.length} learned runs in today’s order. ` : ""}Whatever the model predicts you still remember fast-forwards — knowledge is acknowledged at the speed it’s demonstrated, and only time decays it. A payoff move is always yours. Misses wait at the end; a crack in owned ground is the flag that matters. New lines join here the moment you learn them.
       </p>
-      <CalCard days={days} runsN={T.RUNS.length} />
+      <CalCard days={days} runsN={session.length} />
       {(() => {
         const ti = dayInfo(days, today);
         return (
           <div className="flex gap-2 flex-wrap">
-            <Stat label="TODAY" val={`${playedN}/${T.RUNS.length}`} />
+            <Stat label="TODAY" val={`${playedN}/${session.length}`} />
             <Stat label="FIRST-TRY" val={ti ? `${ti.acc}%` : "—"} />
             <Stat label="MISSES" val={ti ? ti.m : "—"} />
-            <Stat label="OWNED" val={`${Object.keys(conf).filter((k2) => owned(conf[k2], Date.now())).length}/${T.REP.totalUser}`} />
+            <Stat label="OWNED" val={`${Object.keys(conf).filter((k2) => learnedPos.has(k2) && owned(conf[k2], Date.now())).length}/${learnedPos.size}`} />
           </div>
         );
       })()}
@@ -4110,9 +4453,16 @@ function Gauntlet({ onExit }) {
         <Btn full onClick={() => startRun(nextUp.sig)}>
           {redoPhase ? `↺ Redo ${nextUp.id} — hunt the miss →` : `Play ${nextUp.id} →`}
         </Btn>
-      ) : playedN >= T.RUNS.length ? (
+      ) : session.length === 0 ? (
+        <div className="rounded-md p-4 flex flex-col gap-3" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+          <p style={{ fontSize: 13.5, color: C.cream, margin: 0, lineHeight: 1.6 }}>
+            Nothing in the gauntlet yet — lines join it by being learned. Walk a line, pass one clean try, and it appears here the same day.
+          </p>
+          {onLearn && <Btn full onClick={onLearn}>📖 Go learn your first line →</Btn>}
+        </div>
+      ) : playedN >= session.length ? (
         <div className="rounded-md p-4 text-center" style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, fontFamily: "'Fraunces', serif", fontSize: 18, color: C.gold }}>
-          {"✦"} Day complete {cleanN >= T.RUNS.length ? "— immaculate." : "— every stumble avenged."}
+          {"✦"} Day complete {cleanN >= session.length ? "— immaculate." : "— every stumble avenged."}
         </div>
       ) : null}
       {(todays.cracks || []).length > 0 && (
@@ -4145,36 +4495,48 @@ function Gauntlet({ onExit }) {
           );
         })}
       </div>
-      <div className="rounded-md p-3 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
-        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.1em", color: C.muted }}>YOUR TREE · {T.RUNS.length} runs · {T.REP.totalUser} positions</div>
-        {LEARNABLE_PACK_IDS.map((id) => {
-          const pk = PACKS.find((p) => p.id === id) || {};
-          const on = learnedPacks.includes(id);
-          return (
-            <button key={id} onClick={() => togglePack(id)} className="flex items-center justify-between rounded-md px-3 py-2 w-full"
-              style={{ background: on ? C.goldSoft : "transparent", border: `1px solid ${on ? C.gold + "66" : C.line}`, color: on ? C.gold : C.muted, fontSize: 12.5, cursor: "pointer" }}>
-              <span>{pk.chip}</span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10 }}>{on ? "IN THE GAUNTLET ✓" : "＋ add to gauntlet"}</span>
-            </button>
-          );
-        })}
-        <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8, lineHeight: 1.5 }}>
-          Learn a pack in its own room first, then add it here — its runs join the daily gauntlet and its positions start cold. The Scotch core is always in.
-        </div>
-      </div>
+      {(() => {
+        const GS = GAMESTATS.res();
+        if (!GS) return null;
+        const pn = practiceNext(ALL_RUNS, LEARN.state(), conf, retrievability, GS.runProb, Date.now()).slice(0, 3);
+        const recentMisses = [...GS.w.misses, ...GS.b.misses].filter((m) => m.recent > 0).slice(0, 2);
+        return (
+          <div className="rounded-md p-3 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.1em", color: C.muted }}>FROM YOUR GAMES · practice intel</div>
+            {GS.recentWhiteScore != null && (
+              <div style={{ fontSize: 12.5, color: C.cream }}>
+                Last 30 days — White: <b style={{ color: GS.recentWhiteScore >= 80 ? C.gold : C.cream }}>{GS.recentWhiteScore}%</b>
+                <span style={{ color: C.muted }}> ({GS.recentWhiteN}) · goal 80%</span>
+                {GS.recentBlackScore != null && (<span> · Black: <b>{GS.recentBlackScore}%</b><span style={{ color: C.muted }}> ({GS.recentBlackN})</span></span>)}
+              </div>
+            )}
+            {pn.map((r) => (
+              <div key={r.sig} style={{ fontSize: 12, color: C.cream, opacity: 0.9 }}>
+                <span style={{ color: C.gold, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{r.id}</span>
+                {" "}— ≈{(100 * (GS.runProb[r.sig] || 0)).toFixed(1)}% of your games{(() => { const rm = r.userKeys.length ? Math.min(...r.userKeys.map((k2) => retrievability(conf[k2], Date.now()))) : 0; return rm < MEM.OWN ? " · fading" : ""; })()}
+              </div>
+            ))}
+            {recentMisses.map((m, i) => (
+              <div key={i} style={{ fontSize: 11.5, color: C.red }}>
+                real-game slip: expected <b>{m.expected}</b> — {m.recent}× in the last 30 days
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       {(() => {
         const nowB = Date.now();
-        const ks = Object.keys(conf);
+        const ks = Object.keys(conf).filter((k2) => learnedPos.has(k2));
         const pv = ks.filter((k2) => owned(conf[k2], nowB)).length;
         const lr = ks.length - pv;
         return (
           <div className="flex flex-col gap-1">
             <div className="rounded-md flex" style={{ background: C.card, height: 8, overflow: "hidden" }}>
-              <div style={{ width: `${T.REP.totalUser ? (100 * pv) / T.REP.totalUser : 0}%`, background: C.gold, transition: "width .4s" }} />
-              <div style={{ width: `${T.REP.totalUser ? (100 * lr) / T.REP.totalUser : 0}%`, background: C.gold, opacity: 0.35, transition: "width .4s" }} />
+              <div style={{ width: `${learnedPos.size ? (100 * pv) / learnedPos.size : 0}%`, background: C.gold, transition: "width .4s" }} />
+              <div style={{ width: `${learnedPos.size ? (100 * lr) / learnedPos.size : 0}%`, background: C.gold, opacity: 0.35, transition: "width .4s" }} />
             </div>
             <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, color: C.muted, opacity: 0.8 }}>
-              memory · ✦ owned {pv} · ◐ fading or learning {lr} · ○ untested {Math.max(0, T.REP.totalUser - ks.length)} — owned positions fast-forward until decay reclaims them
+              memory · ✦ owned {pv} · ◐ fading or learning {lr} · ○ untested {Math.max(0, learnedPos.size - ks.length)} — owned positions fast-forward until decay reclaims them
             </div>
           </div>
         );
@@ -4278,13 +4640,13 @@ function Gauntlet({ onExit }) {
   return (
     <div className="flex flex-col gap-3 px-5 pb-8">
       <div className="flex items-center justify-between">
-        <Eyebrow>{cur ? `${cur.glyph} ${cur.id}` : ""} · you are White</Eyebrow>
+        <Eyebrow>{cur ? `${cur.glyph} ${cur.id}` : ""} · you are {up === 1 ? "Black" : "White"}</Eyebrow>
         <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: runMisses ? C.red : C.muted }}>
           {runMisses ? `${runMisses} miss${runMisses > 1 ? "es" : ""}` : "clean"}
         </span>
       </div>
       {(() => {
-        const ids = T.REP.zones[key] || [];
+        const ids = (cur ? treeOf(cur) : T).REP.zones[key] || [];
         const chips = ids.map((id) => ((PACKS.find((q) => q.id === id) || {}).chip)).filter(Boolean);
         return (
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: "0.05em", color: C.muted, minHeight: 16, lineHeight: "16px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -4317,7 +4679,7 @@ function Gauntlet({ onExit }) {
         </div>
       )}
       <EvalBar pieces={pieces} hist={hist} k={k} />
-      <Board pieces={pieces} last={lastTok ? fromTo(lastTok) : null} sel={sel} fen={fen}
+      <Board flip={up === 1} pieces={pieces} last={lastTok ? fromTo(lastTok) : null} sel={sel} fen={fen}
         marks={miss === 1 && expFT ? [expFT[0]] : []}
         onTap={onTap} frame={null} />
       <div className="flex gap-3">
@@ -4340,44 +4702,234 @@ function Gauntlet({ onExit }) {
   );
 }
 
+/* ============ LEARN — walk a line with its story, then prove it from memory ============ */
+function LineStudy({ run, onExit }) {
+  const pack = PACKS.find((q) => q.id === run.packId) || {};
+  const doc = useMemo(() => buildLineDoc(pack, EXTRAS[run.packId] || {}, run, { sq, posKey, START }), [run.sig]);
+  const toks = run.toks;
+  const up = run.side === "black" ? 1 : 0;
+  const flip = run.side === "black";
+  const [mode, setMode] = useState("walk"); // walk | try | passed | failed
+  const [wi, setWi] = useState(0);
+  const [hist, setHist] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [miss, setMiss] = useState(0);
+  const [slips, setSlips] = useState(0);
+  const [msg, setMsg] = useState(null);
+
+  const wPieces = useMemo(() => applyMoves(toks.slice(0, wi)), [wi]);
+  const lastW = wi > 0 ? fromTo(toks[wi - 1].split(",")[0]) : null;
+  const cur = wi > 0 ? doc.plies[wi - 1] : null;
+  const atEnd = wi >= toks.length;
+
+  const k = hist.length;
+  const tPieces = useMemo(() => applyMoves(hist), [hist]);
+  const expected = mode === "try" && k % 2 === up && k < toks.length ? { m: toks[k], san: doc.plies[k].san } : null;
+  const expFT = expected ? fromTo(expected.m) : null;
+
+  useEffect(() => {
+    if (mode !== "try") return;
+    if (k >= toks.length) {
+      const t = setTimeout(() => { if (slips === 0) { LEARN.markLearned(run.sig); setMode("passed"); } else setMode("failed"); }, 600);
+      return () => clearTimeout(t);
+    }
+    if (k % 2 !== up) { const t = setTimeout(() => { setHist((h) => [...h, toks[k]]); setMsg(null); }, 480); return () => clearTimeout(t); }
+  }, [mode, k]);
+
+  const onTap = (name) => {
+    if (!expected) return;
+    const pc = tPieces[sq(name)];
+    const own = (p2) => p2 && (up === 1 ? p2 === p2.toLowerCase() : p2 === p2.toUpperCase());
+    if (!sel) { if (own(pc)) setSel(name); return; }
+    if (sel === name) { setSel(null); return; }
+    if (own(pc)) { setSel(name); return; }
+    if (sel + name === expFT[0] + expFT[1]) {
+      setHist((h) => [...h, expected.m]); setSel(null); setMiss(0); setMsg(null);
+    } else {
+      setSel(null);
+      if (miss === 0) { setMiss(1); setSlips((x) => x + 1); setMsg("Not that one — the mover is marked. Find its square yourself."); }
+      else { setMiss(0); setMsg(`It was ${expected.san} — shown. Finish the line, then walk it again or retry.`); setHist((h) => [...h, expected.m]); }
+    }
+  };
+  const startTry = () => { LEARN.markWalked(run.sig); setHist([]); setSel(null); setMiss(0); setSlips(0); setMsg(null); setMode("try"); };
+  const restartWalk = () => { setWi(0); setMode("walk"); };
+
+  const Note = ({ pl }) => (
+    <div className="rounded-md p-3 flex flex-col gap-1.5" style={{ background: C.card, border: `1px solid ${C.line}`, minHeight: 64 }}>
+      <div className="flex items-baseline justify-between">
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, color: pl && (wi - 1) % 2 === up ? C.gold : C.cream }}>{pl ? pl.san : "—"}</span>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: C.muted }}>{wi}/{toks.length}</span>
+      </div>
+      {pl && pl.note ? <p style={{ fontSize: 12.5, color: C.cream, opacity: 0.9, lineHeight: 1.55, margin: 0 }}>{pl.note}</p> : null}
+      {pl && pl.why ? (
+        <div className="rounded p-2" style={{ background: C.goldSoft }}>
+          <p style={{ fontSize: 11.5, color: C.gold, fontStyle: "italic", margin: 0 }}>{pl.why.q}</p>
+          <p style={{ fontSize: 11.5, color: C.cream, opacity: 0.9, margin: "4px 0 0 0", lineHeight: 1.5 }}>{pl.why.a}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3 px-5 pb-8">
+      <div className="flex items-center justify-between">
+        <Eyebrow>{run.glyph} {run.id} · {mode === "walk" ? "walk the line" : mode === "try" ? "from memory" : "the verdict"}</Eyebrow>
+        <button onClick={onExit} style={{ background: "transparent", border: "none", color: C.muted, fontSize: 13, cursor: "pointer" }}>✕</button>
+      </div>
+      <div style={{ fontSize: 12.5, color: C.muted }}>{run.label}</div>
+
+      {mode === "walk" && (<>
+        <Board pieces={wPieces} last={lastW} frame="goldsoft" flip={flip} />
+        {!atEnd ? (<>
+          <Note pl={cur} />
+          <div className="flex gap-2">
+            <Btn tone="ghost" onClick={() => setWi(Math.max(0, wi - 1))}>‹</Btn>
+            <div className="flex-1"><Btn full onClick={() => setWi(wi + 1)}>{wi === 0 ? "Begin —" : ""} next move ›</Btn></div>
+          </div>
+        </>) : (<>
+          <EvalBar pieces={wPieces} hist={toks} k={wi} />
+          <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.goldSoft, border: `1px solid ${C.gold}66` }}>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: C.gold }}>{doc.payoff.title}</div>
+            <p style={{ fontSize: 13, color: C.cream, lineHeight: 1.6, margin: 0 }}>{doc.payoff.text}</p>
+          </div>
+          <Btn full onClick={startTry}>▶ Try it from memory</Btn>
+          <Btn full tone="ghost" onClick={restartWalk}>↺ Walk it again</Btn>
+        </>)}
+      </>)}
+
+      {mode === "try" && (<>
+        <div className="flex items-center justify-between">
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: slips ? C.red : C.muted }}>{slips ? `${slips} slip${slips > 1 ? "s" : ""}` : "clean so far"}</span>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: C.muted }}>{Math.min(k, toks.length)}/{toks.length}</span>
+        </div>
+        <Board pieces={tPieces} last={hist.length ? fromTo(hist[hist.length - 1].split(",")[0]) : null} sel={sel}
+          fen={toFEN(tPieces, hist, k)} flip={flip}
+          marks={miss === 1 && expFT ? [expFT[0]] : []} onTap={onTap} frame={null} />
+        <div className="rounded-md px-3 py-2.5 text-center" style={{ background: C.card, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: k % 2 === 0 ? C.gold : C.muted }}>
+          {k >= toks.length ? "line complete…" : k % 2 === up ? "your move — from memory" : "he replies…"}
+        </div>
+        {msg && <p style={{ fontSize: 12, color: C.red, fontFamily: "'IBM Plex Mono', monospace", margin: 0 }}>{msg}</p>}
+      </>)}
+
+      {mode === "passed" && (<>
+        <Board pieces={tPieces} last={null} frame="gold" flip={flip} />
+        <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.goldSoft, border: `1px solid ${C.gold}` }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: C.gold }}>✓ Learned.</div>
+          <p style={{ fontSize: 13, color: C.cream, lineHeight: 1.6, margin: 0 }}>
+            {run.id} is in your daily gauntlet from today. Learning opened the door — ownership comes from spaced recall there, and only the gauntlet writes memory.
+          </p>
+        </div>
+        <Btn full onClick={onExit}>← Learn another line</Btn>
+      </>)}
+
+      {mode === "failed" && (<>
+        <Board pieces={tPieces} last={null} frame="red" flip={flip} />
+        <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.redSoft, border: `1px solid ${C.red}88` }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: C.red }}>{slips} slip{slips > 1 ? "s" : ""} — not yet.</div>
+          <p style={{ fontSize: 13, color: C.cream, lineHeight: 1.6, margin: 0 }}>A line is learned by one clean pass. Slips here cost nothing — they never touch your memory record.</p>
+        </div>
+        <Btn full onClick={startTry}>⟳ Try again</Btn>
+        <Btn full tone="ghost" onClick={restartWalk}>↺ Walk it again</Btn>
+        <Btn full tone="ghost" onClick={onExit}>← Back to the list</Btn>
+      </>)}
+    </div>
+  );
+}
+
+function LearnPage({ onOpenPack }) {
+  const [, bump] = useState(0);
+  useEffect(() => { LEARN.load(); return LEARN.subscribe(() => bump((x) => x + 1)); }, []);
+  const [, bumpG] = useState(0);
+  useEffect(() => { GAMESTATS.load(); return GAMESTATS.subscribe(() => bumpG((x) => x + 1)); }, []);
+  const [mem, setMem] = useState({});
+  useEffect(() => { (async () => { try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {} })(); }, []);
+  const [study, setStudy] = useState(null);
+  const clusters = useMemo(() => buildClusters(PACKS, FULL_TREE, FULL_TREE_B, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS), []);
+  if (study) return <LineStudy key={study.sig} run={study} onExit={() => setStudy(null)} />;
+
+  const GS = GAMESTATS.res();
+  const ls = LEARN.state();
+  const now = Date.now();
+  const next = learnNext(ALL_RUNS, ls, GS && GS.runProb)[0];
+  const learnedN = ALL_RUNS.filter((r) => ls.learned[r.sig]).length;
+  const groups = [...new Set(clusters.white.map((c) => c.group))];
+
+  return (
+    <div className="flex flex-col gap-4 px-5 pb-8">
+      <Eyebrow>📖 Learn — the tree, one line at a time</Eyebrow>
+      <p style={{ fontSize: 13.5, color: C.cream, lineHeight: 1.6, margin: 0 }}>
+        Every line is numbered like the gauntlet. Walk it with its story, see why the end position is your +1, then play it once from memory — clean pass and it joins today’s practice. {learnedN}/{ALL_RUNS.length} learned.
+      </p>
+      {next && (
+        <button onClick={() => setStudy(next)} className="rounded-md px-4 py-3 text-left"
+          style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>
+          ▶ Next: {next.id} — {next.label}
+          {GS && GS.runProb[next.sig] ? <span style={{ fontWeight: 400, color: C.muted }}> · ≈{(100 * GS.runProb[next.sig]).toFixed(1)}% of your games</span> : null}
+        </button>
+      )}
+      {(() => {
+        const Cluster = ({ cl, story }) => {
+          const done = cl.runs.filter((r) => ls.learned[r.sig]).length;
+          return (
+            <div className="rounded-md p-3 flex flex-col gap-1.5" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+              <div className="flex items-baseline justify-between">
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: C.cream }}>{cl.chip}</span>
+                <span className="flex items-baseline gap-2">
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: done === cl.runs.length ? C.gold : C.muted }}>{done}/{cl.runs.length}</span>
+                  {story && <button onClick={() => onOpenPack(cl.id)} style={{ background: "transparent", border: "none", color: C.muted, fontSize: 10.5, cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>story ↗</button>}
+                </span>
+              </div>
+              {cl.runs.map((r) => {
+                const st = runStatus(r, ls, mem, retrievability, owned, now);
+                const glyph = st.learned ? "✓" : st.walked ? "◐" : "○";
+                return (
+                  <button key={r.sig} onClick={() => setStudy(r)} className="flex items-center gap-2 rounded px-2 py-1.5 text-left w-full"
+                    style={{ background: "transparent", border: `1px solid ${st.learned ? C.gold + "33" : C.line}`, cursor: "pointer" }}>
+                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: st.learned ? C.gold : C.muted, width: 14 }}>{glyph}</span>
+                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.gold, whiteSpace: "nowrap" }}>{r.id}</span>
+                    <span className="flex-1" style={{ fontSize: 12, color: C.cream, opacity: 0.85, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</span>
+                    {st.learned && <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: st.ownedN === st.total ? C.gold : C.muted }}>✦{st.ownedN}/{st.total}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        };
+        return (<>
+          {groups.map((grp) => (
+            <div key={grp} className="flex flex-col gap-2">
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.14em", color: C.gold, opacity: 0.9 }}>♔ WHITE · {grp.toUpperCase()}</div>
+              {clusters.white.filter((c) => c.group === grp).map((cl) => <Cluster key={cl.id} cl={cl} story />)}
+            </div>
+          ))}
+          <div className="flex flex-col gap-2">
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.14em", color: C.cream, opacity: 0.9 }}>♚ BLACK · YOUR DEFENSES</div>
+            {clusters.black.map((cl) => <Cluster key={cl.id} cl={cl} />)}
+          </div>
+        </>);
+      })()}
+    </div>
+  );
+}
+
 /* ============ MY GAMES — coverage, leaks, and what to learn, from real chess.com games ============ */
 function GamesPanel({ onExit }) {
   const [user, setUser] = useState("");
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState(null);
-  const [gains, setGains] = useState([]);
-  const [learned, setLearned] = useState([]);
   const [mem, setMem] = useState({});
-  const [gameCount, setGameCount] = useState(0);
-
+  const [, bump] = useState(0);
+  useEffect(() => { GAMESTATS.load(); return GAMESTATS.subscribe(() => bump((x) => x + 1)); }, []);
+  const [, bumpL] = useState(0);
+  useEffect(() => { LEARN.load(); return LEARN.subscribe(() => bumpL((x) => x + 1)); }, []);
   useEffect(() => {
     (async () => {
       try { const u = STORE && (await STORE.get(CCUSER)); if (u && u.value) setUser(u.value); } catch (e) {}
-      let lp = [];
-      try { const t = STORE && (await STORE.get(TREEKEY)); if (t && t.value) { lp = JSON.parse(t.value); setLearned(lp); } } catch (e) {}
       try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {}
-      try {
-        const c = STORE && (await STORE.get(CCCACHE));
-        if (c && c.value) { const d = JSON.parse(c.value); if (d.user) analyze(Object.values(d.months || {}).flat(), treeFor(lp)); }
-      } catch (e) {}
     })();
   }, []);
 
-  const treeFor = (lp) => (lp.length ? buildTree([...CORE_PACK_IDS, ...lp.filter((id) => LEARNABLE_PACK_IDS.includes(id))]) : DEFAULT_TREE);
-  const currentTree = useMemo(() => treeFor(learned), [learned]);
-
-  const analyze = (recs, treeOverride) => {
-    const games = recs.map((g) => ({ white: !!g.w, s: g.s, r: g.r, t: g.t, url: g.url }));
-    const tree = treeOverride || currentTree;
-    const r = analyzeGames(tree, { sq, posKey, START }, games);
-    const inTree = tree.packIds;
-    const cands = LEARNABLE_PACK_IDS.filter((id) => !inTree.includes(id))
-      .map((id) => ({ id, tree: buildTree([...inTree, id]) }));
-    setGains(packGains(tree, cands, r.leaks));
-    setRes(r); setGameCount(games.filter((g) => g.white).length);
-    setStatus(null);
-  };
+  const res = GAMESTATS.res();
 
   const fetchGames = async () => {
     const u = user.trim().toLowerCase();
@@ -4410,14 +4962,14 @@ function GamesPanel({ onExit }) {
         out.push(...recs);
       }
       try { if (STORE) await STORE.set(CCCACHE, JSON.stringify(cache)); } catch (e) {}
-      analyze(out);
+      GAMESTATS.setGames(out);
+      setStatus(null);
     } catch (e) { setStatus("fetch failed — check the username and your connection"); }
     setBusy(false);
   };
 
-  const chipOf = (id) => (PACKS.find((p) => p.id === id) || {}).chip || id;
-  const coveredBy = (leak) => { const g = gains.find((x) => x.covers.includes(leak.move) && x.n >= leak.n); return g ? g.id : null; };
   const moveNoOf = (ply) => Math.floor(ply / 2) + 1;
+  const learnQueue = res ? learnNext(ALL_RUNS, LEARN.state(), res.runProb).slice(0, 3) : [];
   const Card = ({ title, children }) => (
     <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
       <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: C.muted }}>{title}</div>
@@ -4438,44 +4990,53 @@ function GamesPanel({ onExit }) {
       </div>
       {status && <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, margin: 0 }}>{status}</p>}
       {res && (<>
-        <Card title={`COVERAGE · from ${res.totals.e4} rapid games as White`}>
+        <Card title={`GOAL · last 30 days`}>
           <div className="flex items-baseline gap-3">
-            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 40, color: C.gold, lineHeight: 1 }}>{Math.round(100 * res.coverage)}%</span>
-            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85, lineHeight: 1.45 }}>of your 1.e4 games would run inside your current tree to a line’s end, if you play your moves — estimated node-by-node from your own opponents.</span>
+            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 34, color: (res.recentWhiteScore || 0) >= 80 ? C.gold : C.cream, lineHeight: 1 }}>{res.recentWhiteScore == null ? "—" : res.recentWhiteScore + "%"}</span>
+            <span style={{ fontSize: 12, color: C.muted }}>as White ({res.recentWhiteN || 0} games) → converge on 80%. Black: <b style={{ color: C.cream }}>{res.recentBlackScore == null ? "—" : res.recentBlackScore + "%"}</b> ({res.recentBlackN || 0}). The mechanism: a +1 you understand out of every opening, then the game is yours to take.</span>
+          </div>
+        </Card>
+        <Card title={`COVERAGE · from ${res.w.totals.e4} rapid games as White`}>
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 40, color: C.gold, lineHeight: 1 }}>{Math.round(100 * res.w.coverage)}%</span>
+            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85, lineHeight: 1.45 }}>of your 1.e4 games stay inside the tree through your first six moves — the zone where the +1 gets banked.</span>
           </div>
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
-            observed endings: {res.totals.done} ran a full line · {res.totals.opp} opponent left · {res.totals.user} you left first
+            by depth: move 3 · {Math.round(100 * res.w.coverageCurve[6])}% — move 4 · {Math.round(100 * res.w.coverageCurve[8])}% — move 5 · {Math.round(100 * res.w.coverageCurve[10])}% — full line · {(100 * res.w.coverageCurve.full).toFixed(1)}%
           </div>
-          {gains.length > 0 && (
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
+            endings observed: {res.w.totals.done} full line · {res.w.totals.opp} opponent left · {res.w.totals.user} you left first
+          </div>
+          {learnQueue.length > 0 && (
             <div className="flex flex-col gap-1 pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
-              {gains.map((g) => (
-                <div key={g.id} style={{ fontSize: 12.5, color: C.gold }}>
-                  ＋ {chipOf(g.id)} would absorb <b>{g.n}</b> of these games ({Math.round((100 * g.n) / Math.max(1, res.totals.e4))}%) — learn it, then add it on the Daily page.
+              {learnQueue.map((r) => (
+                <div key={r.sig} style={{ fontSize: 12.5, color: C.gold }}>
+                  📖 learn next: <b>{r.id}</b> — ≈{(100 * (res.runProb[r.sig] || 0)).toFixed(1)}% of your games
                 </div>
               ))}
             </div>
           )}
         </Card>
-        <Card title="TOP LEAKS · where opponents leave your tree">
-          {res.leaks.slice(0, 8).map((L, i) => {
-            const cb = coveredBy(L);
-            return (
-              <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
-                <span style={{ color: C.cream }}>
-                  {moveNoOf(L.ply)}… <b>{L.move}</b>
-                  {cb ? <span style={{ color: C.gold }}> · {chipOf(cb)} covers this</span> : null}
-                </span>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: L.score != null && L.score < 45 ? C.red : C.muted, whiteSpace: "nowrap" }}>
-                  {L.n}× · you score {L.score == null ? "—" : L.score + "%"}
-                </span>
-              </div>
-            );
-          })}
-          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>ranked by frequency × score deficit — a common line you already beat is not a priority.</div>
+        <Card title={`AS BLACK · from ${res.b.totals.mine} rapid games`}>
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 30, color: C.cream, lineHeight: 1 }}>{Math.round(100 * res.b.coverageCurve[6])}%</span>
+            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85 }}>of games follow your Black book through move 3 (move 6: {Math.round(100 * res.b.coverage)}%). Top gaps: {res.b.leaks.slice(0, 3).map((L) => L.move + "×" + L.n).join(", ")}.</span>
+          </div>
+        </Card>
+        <Card title="TOP LEAKS · where opponents leave your tree (White games)">
+          {res.w.leaks.slice(0, 8).map((L, i) => (
+            <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
+              <span style={{ color: C.cream }}>{moveNoOf(L.ply)}… <b>{L.move}</b></span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: L.score != null && L.score < 45 ? C.red : C.muted, whiteSpace: "nowrap" }}>
+                {L.n}× · you score {L.score == null ? "—" : L.score + "%"}
+              </span>
+            </div>
+          ))}
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>ranked by frequency × score deficit. Uncovered branches you keep meeting are candidates for new lines — they arrive as briefs, not improvisations.</div>
         </Card>
         <Card title="YOUR MISSES · tree positions where you left book first">
-          {res.misses.length === 0 && <div style={{ fontSize: 12.5, color: C.cream }}>None — every deviation was your opponent’s. Keep it that way.</div>}
-          {res.misses.slice(0, 8).map((m, i) => {
+          {res.w.misses.length === 0 && <div style={{ fontSize: 12.5, color: C.cream }}>None — every deviation was your opponent’s.</div>}
+          {res.w.misses.slice(0, 8).map((m, i) => {
             const rec = mem[m.key];
             const R = retrievability(rec, Date.now());
             const played = Object.entries(m.plays).sort((a, b) => b[1] - a[1]).map(([mv, n2]) => `${mv}×${n2}`).join(" ");
@@ -4489,21 +5050,21 @@ function GamesPanel({ onExit }) {
             );
           })}
           <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>
-            “recent” = last 30 days. Old misses are mostly pre-training habits; recent misses on trained ground are the real flags — drill those runs today.
+            “recent” = last 30 days. Old misses are pre-training habit; a recent miss on trained ground is the flag — its runs are ranked for you on the Practice page.
           </div>
         </Card>
         <Card title="RESULTS BY BUCKET">
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: C.cream, lineHeight: 1.8 }}>
-            line completed: {res.totals.done} games · score {res.scores.done == null ? "—" : res.scores.done + "%"}<br />
-            opponent left tree: {res.totals.opp} · score {res.scores.opp == null ? "—" : res.scores.opp + "%"}<br />
-            you left first: {res.totals.user} · score {res.scores.user == null ? "—" : res.scores.user + "%"}
+            line completed: {res.w.totals.done} games · score {res.w.scores.done == null ? "—" : res.w.scores.done + "%"}<br />
+            opponent left tree: {res.w.totals.opp} · score {res.w.scores.opp == null ? "—" : res.w.scores.opp + "%"}<br />
+            you left first: {res.w.totals.user} · score {res.w.scores.user == null ? "—" : res.w.scores.user + "%"}
           </div>
-          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>the value proposition, measured: the gap between “line completed” and the rest is what the tree is worth per game.</div>
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>the value proposition, measured: the gap between “in book” and “you left first” is what the tree is worth per game.</div>
         </Card>
       </>)}
       {!res && !busy && (
         <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.6 }}>
-          Fetches your public chess.com rapid games (straight from your device — nothing leaves it except the chess.com request), walks every 1.e4 game against your tree, and reports: how much of your real opposition your lines cover, where the leaks are, which pack would plug them, and where YOU left book first.
+          Fetches your public chess.com rapid games (straight from your device — nothing leaves it except the chess.com request), walks every 1.e4 game against your tree, and reports coverage by depth, the leaks, what to learn next, and where you left book first.
         </p>
       )}
       <Btn full tone="ghost" onClick={onExit}>{"←"} Back</Btn>
@@ -4512,7 +5073,7 @@ function GamesPanel({ onExit }) {
 }
 
 export default function LinesMock() {
-  const [view, setView] = useState("packs");
+  const [view, setView] = useState("learn");
   const [snd, setSnd] = useState(SOUND.isOn());
   useEffect(() => { SOUND.whenReady().then(() => setSnd(SOUND.isOn())); }, []);
   const [packId, setPackId] = useState("mieses");
@@ -4520,7 +5081,7 @@ export default function LinesMock() {
   const [tab, setTab] = useState("end");
   const pack = PACKS.find((p) => p.id === packId);
   const family = FAMILIES.find((f) => f.id === fam);
-  const famPacks = PACKS.filter((p) => p.family === fam);
+  const famPacks = PACKS.filter((p) => p.family === fam && p.side !== "black");
   const switchPack = (id) => {
     const t = PACKS.find((p) => p.id === id);
     if (!t) return;
@@ -4539,17 +5100,21 @@ export default function LinesMock() {
         <header className="px-5 pt-5 pb-3 flex flex-col gap-3">
           <div className="flex items-baseline justify-between">
             <div style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 22 }}>lines</div>
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, letterSpacing: "0.08em" }}>{view === "daily" ? "⚡ DAILY GAUNTLET" : view === "games" ? "♟ MY GAMES · COVERAGE" : pack.badge}</div>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, letterSpacing: "0.08em" }}>{view === "daily" ? "⚡ PRACTICE" : view === "games" ? "♟ MY GAMES" : view === "learn" ? "📖 LEARN" : pack.badge}</div>
+          </div>
+          <div className="flex rounded-md" style={{ background: C.card, border: `1px solid ${C.line}`, overflow: "hidden" }}>
+            {[["learn", "📖 Learn"], ["daily", "⚡ Practice"], ["games", "♟ Games"]].map(([id, label]) => (
+              <button key={id} onClick={() => setView(id)} className="flex-1 py-2.5"
+                style={{
+                  background: view === id || (id === "learn" && view === "packs") ? C.goldSoft : "transparent",
+                  color: view === id || (id === "learn" && view === "packs") ? C.gold : C.muted,
+                  border: "none", fontSize: 13, fontWeight: view === id ? 700 : 500, cursor: "pointer",
+                }}>
+                {label}
+              </button>
+            ))}
           </div>
           {view === "packs" && (<>
-          <button onClick={() => setView("daily")} className="rounded-md px-4 py-2.5 text-left"
-            style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, fontSize: 13.5, fontWeight: 600 }}>
-            ⚡ Daily gauntlet — your whole tree, shuffled →
-          </button>
-          <button onClick={() => setView("games")} className="rounded-md px-4 py-2.5 text-left"
-            style={{ background: "transparent", border: `1px solid ${C.line}`, color: C.cream, fontSize: 13, fontWeight: 500 }}>
-            ♟ My games — coverage, leaks, what to learn →
-          </button>
           <div className="flex flex-col gap-1">
             {[true, false].map((rep) => (
               <div key={String(rep)} className="flex gap-2 overflow-x-auto items-center" style={{ scrollbarWidth: "none" }}>
@@ -4598,8 +5163,9 @@ export default function LinesMock() {
           </>)}
         </header>
         <main className="flex-1 pb-28 pt-2" style={{ paddingLeft: view === "packs" ? 20 : 0, paddingRight: view === "packs" ? 20 : 0 }}>
-          {view === "daily" && <Gauntlet onExit={() => setView("packs")} />}
-          {view === "games" && <GamesPanel onExit={() => setView("packs")} />}
+          {view === "learn" && <LearnPage onOpenPack={(id) => { switchPack(id); setView("packs"); }} />}
+          {view === "daily" && <Gauntlet onExit={() => setView("learn")} onLearn={() => setView("learn")} />}
+          {view === "games" && <GamesPanel onExit={() => setView("learn")} />}
           {view === "packs" && tab === "end" && <EndScreen key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "learn" && <LearnFlow key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "edge" && <EdgeCases key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
@@ -4638,4 +5204,4 @@ export default function LinesMock() {
 }
 
 /* ---------- test exports (tools/*.mjs) — export-only edit, no behavior change ---------- */
-export { engineCore, sqName, moveKind, pieceCount, evalRead, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS };
+export { engineCore, sqName, moveKind, pieceCount, evalRead, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS };

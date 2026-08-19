@@ -24,13 +24,13 @@ export const sanList = (pgn) => {
 };
 
 /* one game vs the tree; sans is the game's SAN list, from ply 0 */
-export const walkGame = (tree, sq, posKey, START, sans) => {
+export const walkGame = (tree, sq, posKey, START, sans, userPly = 0) => {
   const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
   let b = START.slice(), k = 0;
   while (k < sans.length) {
     const key = posKey(b, k % 2);
     const gs = clean(sans[k]);
-    if (k % 2 === 0) {
+    if (k % 2 === userPly) {
       const u = tree.REP.user[key];
       if (!u) return { kind: "done", ply: k, key };
       if (clean(u.san) !== gs) return { kind: "user", ply: k, key, expected: u.san, played: sans[k] };
@@ -61,10 +61,13 @@ export const scorePct = (games) => {
 export const analyzeGames = (tree, helpers, games, opts = {}) => {
   const { sq, posKey, START } = helpers;
   const minN = opts.minN || 8;
+  const userPly = opts.side === "black" ? 1 : 0;
   const recentMs = opts.now ? opts.now - 30 * 86400000 : Date.now() - 30 * 86400000;
 
-  const white = games.filter((g) => g.white);
-  const e4 = white.filter((g) => clean(g.s[0]) === "e4");
+  // pool: as White, games where the user opened with the tree's move (1.e4);
+  // as Black, every game — the root is an opponent node, so all games enter.
+  const mine = games.filter((g) => (userPly === 0 ? g.white : !g.white));
+  const e4 = userPly === 0 ? mine.filter((g) => clean(g.s[0]) === "e4") : mine;
 
   // walk every game; also log the opponent's reply at every opp-node reached
   const nodeSeen = {}, nodeStay = {}, nodeLeaks = {}, nodePly = {}, nodeMove = {}; // key -> counts
@@ -76,7 +79,7 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
     while (k < g.s.length) {
       const key = posKey(b, k % 2);
       const gs = clean(g.s[k]);
-      if (k % 2 === 0) {
+      if (k % 2 === userPly) {
         const u = tree.REP.user[key];
         if (!u) break;
         if (clean(u.san) !== gs) break; // conditioned on your positions: past your deviation the branch is unobservable
@@ -99,7 +102,7 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
       }
       k++;
     }
-    const out = walkGame(tree, sq, posKey, START, g.s);
+    const out = walkGame(tree, sq, posKey, START, g.s, userPly);
     buckets[out.kind].push({ g, out });
   }
 
@@ -121,40 +124,57 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
     let best = null;
     for (const pl of thickPlies) if (pl <= ply) best = pl;
     if (best == null) return priorStay;
-    return plyAgg[best].stay / plyAgg[best].seen;
+    // shrink the ply aggregate toward the global rate: a single narrow node can
+    // dominate a deep ply's aggregate (e.g. one thick node with stay 2/8) and
+    // would otherwise poison every deeper thin node's prior with its leak
+    const a = plyAgg[best];
+    return (a.stay + 12 * priorStay) / (a.seen + 12);
   };
 
-  // coverage: P(opponent stays scripted until a terminal), node-product over the tree
-  const memo = {};
-  const cover = (b, k) => {
-    const key = posKey(b, k % 2);
-    if (memo[key] != null) return memo[key];
-    let v;
-    if (k % 2 === 0) {
-      const u = tree.REP.user[key];
-      v = u ? cover(applyTok(b, u.m), k + 1) : 1;
-    } else {
-      const entry = tree.REP.opp[key] || [];
-      if (!entry.length) v = 1;
-      else {
-        const n = nodeSeen[key] || 0;
-        const stay = n >= minN ? (nodeStay[key] || 0) / n : priorAt(k);
-        // split the stay mass across scripted replies by observed share (evenly when unobserved)
-        const mv = nodeMove[key] || {};
-        const totalObs = Object.values(mv).reduce((a, x) => a + x, 0);
-        let acc = 0;
-        for (const e of entry) {
-          const child = cover(applyTok(b, e.m), k + 1);
-          const w = totalObs ? (mv[(e.san || "").replace(/^\d+\.+/, "").replace(/[!?]+$/, "").replace(/[+#]/g, "")] || 0) / totalObs : 1 / entry.length;
-          acc += w * child;
-        }
-        // unobserved replies at an observed node carry no mass; renormalize only when nothing was observed
-        v = stay * acc;
-      }
-    }
-    memo[key] = v; return v;
+  // stay-rate with continuous shrinkage toward the depth prior — no thick/thin
+  // cliff, and no single narrow node can dominate an estimate
+  const stayAt = (key, k) => {
+    const n = nodeSeen[key] || 0;
+    return ((nodeStay[key] || 0) + 6 * priorAt(k)) / (n + 6);
   };
-  const coverage = cover(START.slice(), 0);
+  // coverage(depth): P(the opponent's replies all stay scripted through `depth`
+  // plies), node-product over the tree. Full-line completion is the wrong yard-
+  // stick for the value proposition — the +1 is banked by ~your 6th move, while
+  // scripted lines run to move 9-11 tabiyas — so the headline is coverage@12
+  // plies and the full curve is reported alongside.
+  const coverTo = (limit) => {
+    const memo = {};
+    const cover = (b, k) => {
+      if (k >= limit) return 1;
+      const key = posKey(b, k % 2);
+      if (memo[key] != null) return memo[key];
+      let v;
+      if (k % 2 === userPly) {
+        const u = tree.REP.user[key];
+        v = u ? cover(applyTok(b, u.m), k + 1) : 1;
+      } else {
+        const entry = tree.REP.opp[key] || [];
+        if (!entry.length) v = 1;
+        else {
+          const stay = stayAt(key, k);
+          const mv = nodeMove[key] || {};
+          const totalObs = Object.values(mv).reduce((a, x) => a + x, 0);
+          let acc = 0;
+          for (const e of entry) {
+            const child = cover(applyTok(b, e.m), k + 1);
+            const c = mv[clean(e.san)] || 0;
+            const w = (c + 0.5) / (totalObs + 0.5 * entry.length); // smoothed share
+            acc += w * child;
+          }
+          v = stay * acc;
+        }
+      }
+      memo[key] = v; return v;
+    };
+    return cover(START.slice(), 0);
+  };
+  const coverageCurve = { 6: coverTo(6), 8: coverTo(8), 10: coverTo(10), 12: coverTo(12), full: coverTo(99) };
+  const coverage = coverageCurve[12];
 
   // direct empirical coverage (games that ran to a terminal among resolved games)
   const resolved = buckets.opp.length + buckets.done.length;
@@ -172,6 +192,29 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
   }
   leaks.sort((a, b) => (b.ev - a.ev) || (b.n - a.n));
 
+  // per-run path probability: how often this exact line happens in YOUR pool
+  // (product of the opponent's move-shares along the path; add-half smoothing at
+  // thick nodes so unobserved scripted replies stay possible, priors at thin ones)
+  const runProb = {};
+  if (tree.RUNS) {
+    for (const r of tree.RUNS) {
+      let b = START.slice(), p = 1;
+      const cap = Math.min(r.toks.length, 13); // frequency through the teaching zone, not the full tabiya
+      for (let k = 0; k < cap; k++) {
+        const key = posKey(b, k % 2);
+        if (k % 2 !== userPly) {
+          const entry = tree.REP.opp[key] || [];
+          const mv = nodeMove[key] || {};
+          const totalObs = Object.values(mv).reduce((a, x) => a + x, 0);
+          const c = mv[clean(r.sans[k])] || 0;
+          p *= stayAt(key, k) * ((c + 0.5) / (totalObs + 0.5 * Math.max(1, entry.length)));
+        }
+        b = applyTok(b, r.toks[k]);
+      }
+      runProb[r.sig] = p;
+    }
+  }
+
   // your misses on tree positions
   const missMap = {};
   for (const { g, out } of buckets.user) {
@@ -185,11 +228,11 @@ export const analyzeGames = (tree, helpers, games, opts = {}) => {
   const misses = Object.values(missMap).sort((a, b) => b.recent - a.recent || b.n - a.n);
 
   return {
-    totals: { games: games.length, white: white.length, e4: e4.length,
+    totals: { games: games.length, mine: mine.length, e4: e4.length,
       user: buckets.user.length, opp: buckets.opp.length, done: buckets.done.length },
-    coverage, coveredDirect, priorStay,
+    coverage, coverageCurve, coveredDirect, priorStay,
     scores: { user: scorePct(buckets.user.map((x) => x.g)), opp: scorePct(buckets.opp.map((x) => x.g)), done: scorePct(buckets.done.map((x) => x.g)) },
-    leaks, misses,
+    leaks, misses, runProb,
   };
 };
 

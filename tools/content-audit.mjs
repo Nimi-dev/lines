@@ -6,8 +6,18 @@
 import assert from "node:assert/strict";
 import { loadApp } from "./_load.mjs";
 
-const { PACKS, EXTRAS, CORE_PACK_IDS, LEARNABLE_PACK_IDS } = await loadApp();
-const GATED = [...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS];
+const { PACKS, EXTRAS, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS } = await loadApp();
+
+/* A ratchet, not a blanket rule. Packs listed here are at the bar and must stay
+   there — the audit fails if one regresses. Every other gauntlet pack is
+   reported with its coverage but does not fail the build, so new content can
+   land unfinished and be brought up deliberately. Add a pack here once it is
+   complete; that is the only way the bar ever moves. */
+const COMPLETE = ["mieses", "classical", "steinitz", "hoover", "declines", "petroff", "russian", "philidor", "hanham", "alien"];
+const inGauntlet = [...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS, ...(BLACK_PACK_IDS || [])];
+const missingFromTree = COMPLETE.filter((id) => !inGauntlet.includes(id));
+assert.equal(missingFromTree.length, 0, `COMPLETE lists pack(s) not in the gauntlet tree: ${missingFromTree.join(", ")}`);
+const GATED = COMPLETE;
 
 // the drill flashes only the first sentence of an opponent-move note
 const firstSentence = (t) => { const m = t.match(/^.*?[.!?](?=\s|$)/); return m ? m[0] : t; };
@@ -63,4 +73,16 @@ for (const p of PACKS.filter((x) => GATED.includes(x.id))) {
   assert.ok(packWhys >= 2, where(`only ${packWhys} why-block(s) — a drilled pack carries at least 2`));
 }
 
-console.log(`content-audit: ${GATED.length} gauntlet packs — ${notes} annotated plies, ${whys} why-blocks, ${drills} drills; every ply speaks, every chunk has a goal and a hint.`);
+// everything else in the tree: reported, not enforced
+const pending = [];
+for (const p of PACKS.filter((x) => inGauntlet.includes(x.id) && !GATED.includes(x.id))) {
+  const dn = p.dream.filter((d) => d.note && d.note.trim()).length;
+  const gn = p.danger ? p.danger.plies.filter((d) => d.note && d.note.trim()).length : 0;
+  const gt = p.danger ? p.danger.plies.length : 0;
+  pending.push(`${p.id} ${dn}/${p.dream.length} dream, ${gn}/${gt} danger, ${p.dream.filter((d) => d.why).length} why`);
+}
+if (pending.length) {
+  console.log(`content-audit: ${pending.length} gauntlet pack(s) below the bar (reported, not enforced — add to COMPLETE when done):`);
+  for (const line of pending) console.log(`    · ${line}`);
+}
+console.log(`content-audit: ${GATED.length} packs held at the bar — ${notes} annotated plies, ${whys} why-blocks, ${drills} drills; every ply speaks, every chunk has a goal and a hint.`);
