@@ -14,6 +14,7 @@ const C = {
 
 /* ---------- tiny chess model (scripted lines, no rules engine) ---------- */
 const sq = (n) => (n.charCodeAt(1) - 49) * 8 + (n.charCodeAt(0) - 97);
+const sqName = (i) => "abcdefgh"[i % 8] + (Math.floor(i / 8) + 1);
 const START = (() => {
   const b = Array(64).fill(null);
   const back = ["R", "N", "B", "Q", "K", "B", "N", "R"];
@@ -2281,7 +2282,20 @@ const toFEN = (pieces, hist, k) => {
   let c = "";
   if (!gone("e1")) { if (!gone("h1")) c += "K"; if (!gone("a1")) c += "Q"; }
   if (!gone("e8")) { if (!gone("h8")) c += "k"; if (!gone("a8")) c += "q"; }
-  return rows.join("/") + " " + (k % 2 === 0 ? "w" : "b") + " " + (c || "-") + " - 0 " + (Math.floor(k / 2) + 1);
+  return rows.join("/") + " " + (k % 2 === 0 ? "w" : "b") + " " + (c || "-") + " " + epField(pieces, hist) + " 0 " + (Math.floor(k / 2) + 1);
+};
+// en-passant target — only when the capture is actually available (lichess/FEN-db
+// convention), so audit FENs stay byte-identical wherever no e.p. capture exists.
+const epField = (pieces, hist) => {
+  const last = hist[hist.length - 1];
+  if (!last) return "-";
+  const g = last.split(",")[0], f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4));
+  const pc = pieces[t];
+  if (!pc || pc.toLowerCase() !== "p") return "-";
+  if (Math.abs(t - f) !== 16) return "-";
+  const foe = pc === "P" ? "p" : "P";
+  const canTake = (t % 8 > 0 && pieces[t - 1] === foe) || (t % 8 < 7 && pieces[t + 1] === foe);
+  return canTake ? sqName((f + t) / 2) : "-";
 };
 
 /* storage shim: Claude artifact storage inside the app, localStorage outside it */
@@ -2487,14 +2501,38 @@ function engineCore() {
     if(whitePOV<-31000) return {mate: -Math.ceil((32000+whitePOV)/2), d:lastD};
     return {cp: whitePOV, d: lastD};
   }
+  // legal destination squares for the piece standing on `from` (0..63) in `fen`.
+  // Drives the board's move hints — same perft-verified generator the search uses.
+  function legalTargets(fen, from){
+    parseFen(fen);
+    var mv=genMoves(false), out=[], i, t;
+    for(i=0;i<mv.length;i++){
+      if((mv[i]&63)!==from) continue;
+      if(make(mv[i])){ unmake(); t=(mv[i]>>6)&63; if(out.indexOf(t)<0) out.push(t); }
+    }
+    return out;
+  }
   // targets of currently-legal capture moves (test/audit hook — not used in play)
   function legalCaptureTargets(){
     var mv=genMoves(true), out=[];
     for(var i=0;i<mv.length;i++){ if(make(mv[i])){ unmake(); out.push((mv[i]>>6)&63); } }
     return out;
   }
-  return { parseFen: parseFen, perft: perft, go: go, evalPos: evalPos, legalCaptureTargets: legalCaptureTargets };
+  return { parseFen: parseFen, perft: perft, go: go, evalPos: evalPos, legalTargets: legalTargets, legalCaptureTargets: legalCaptureTargets };
 }
+
+/* Move hints for the board: legal destinations of the selected piece, straight
+   from the perft-verified generator (one engine instance, reused). */
+const MOVE_HINTS = (() => {
+  let core = null;
+  return (fen, name) => {
+    if (!fen || !name) return [];
+    try {
+      if (!core) core = engineCore();
+      return core.legalTargets(fen, sq(name)).map(sqName);
+    } catch (e) { return []; }
+  };
+})();
 
 const LOCAL_WORKER_MAIN = 'var FEN="";self.onmessage=function(e){var m=e.data;if(m==="uci"){self.postMessage("uciok");}else if(m.indexOf("position fen ")===0){FEN=m.slice(13);}else if(m.indexOf("go")===0){var ms=1150;var mm=m.match(/movetime (\\d+)/);if(mm)ms=parseInt(mm[1],10);var r=core.go(FEN,ms);var side=FEN.split(/\\s+/)[1];var v;var kind;if(r.mate!=null){kind="mate";v=side==="w"?r.mate:-r.mate;}else{kind="cp";v=side==="w"?r.cp:-r.cp;}self.postMessage("info depth "+r.d+" score "+kind+" "+v);self.postMessage("bestmove 0000");}};';
 
@@ -2674,8 +2712,11 @@ function EvalBar({ pieces, hist, k }) {
 
 
 /* ---------- board ---------- */
-function Board({ pieces, last, marks = [], sel, frame, onTap, flip = false, size = "min(88vw, 380px)" }) {
+function Board({ pieces, last, marks = [], sel, fen, frame, onTap, flip = false, size = "min(88vw, 380px)" }) {
   const lastIdx = last ? last.map(sq) : [];
+  // chess.com-style hints: a dot on every legal quiet destination of the
+  // selected piece, a ring on every square it can capture on.
+  const hints = useMemo(() => (onTap && sel && fen ? MOVE_HINTS(fen, sel) : []), [onTap ? 1 : 0, sel, fen]);
   const glow =
     frame === "gold" ? `0 0 0 3px ${C.gold}, 0 0 28px rgba(217,164,65,0.35)` :
     frame === "goldsoft" ? `0 0 0 2px rgba(217,164,65,0.45)` :
@@ -2694,6 +2735,7 @@ function Board({ pieces, last, marks = [], sel, frame, onTap, flip = false, size
           const isLast = lastIdx.includes(idx);
           const isMark = marks.includes(name);
           const isSel = sel === name;
+          const isHint = hints.includes(name);
           return (
             <div key={i} onClick={onTap ? () => onTap(name) : undefined}
               className="flex items-center justify-center select-none"
@@ -2711,6 +2753,15 @@ function Board({ pieces, last, marks = [], sel, frame, onTap, flip = false, size
                 <span style={{ position: "absolute", bottom: 1, right: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "#EBECD0" : "#779556", pointerEvents: "none" }}>
                   {"abcdefgh"[file]}
                 </span>
+              )}
+              {isHint && (
+                <span data-hint={p ? "capture" : "move"}
+                  style={{
+                    position: "absolute", inset: 0, pointerEvents: "none",
+                    background: p
+                      ? "radial-gradient(rgba(0,0,0,0) 0%, rgba(0,0,0,0) 79%, rgba(20,85,30,0.32) 80%)"
+                      : "radial-gradient(rgba(20,85,30,0.32) 19%, rgba(0,0,0,0) 20%)",
+                  }} />
               )}
               {p && (
                 <img src={`/pieces/${p.toLowerCase()}${p === p.toUpperCase() ? "l" : "d"}.svg`} alt={p}
@@ -2989,7 +3040,7 @@ function FullDrill({ pack, go, onExplain }) {
     if (waiting) return;
     const pc = pieces[sq(name)];
     const mine = pc && ((pc === pc.toUpperCase()) === userWhite);
-    if (mine) { setSel(name); return; }
+    if (mine) { setSel(sel === name ? null : name); return; }
     if (!sel) return;
     const [from, to] = fromTo(expected.m);
     if (sel === from && name === to) { advance(); }
@@ -2998,6 +3049,7 @@ function FullDrill({ pack, go, onExplain }) {
     setSel(null);
   };
   const lastM = idx > 0 ? D[idx - 1].m : null;
+  const fen = toFEN(pieces, D.slice(0, idx).map((p) => p.m), idx);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -3012,6 +3064,7 @@ function FullDrill({ pack, go, onExplain }) {
         pieces={miss === 2 ? applyMoves(D.slice(0, idx + 1).map((p) => p.m)) : pieces}
         last={miss === 2 ? fromTo(expected.m) : lastM ? fromTo(lastM) : null}
         sel={sel}
+        fen={fen}
         marks={miss === 1 ? [fromTo(expected.m)[0]] : []}
         onTap={miss === 2 || waiting ? undefined : tap}
       />
@@ -3157,11 +3210,12 @@ function EdgeCases({ pack, go, switchPack }) {
   const waiting = !isUser(divergeIdx + t);
   const pieces = applyMoves(applied);
   const lastM = applied[applied.length - 1];
+  const fen = toFEN(pieces, applied, divergeIdx + t);
   const advance = () => { setT(t + 1); setSel(null); setMiss(0); };
   const tap = (name) => {
     if (waiting || !expected) return;
     const pc = pieces[sq(name)];
-    if (pc && ((pc === pc.toUpperCase()) === userWhite)) { setSel(name); return; }
+    if (pc && ((pc === pc.toUpperCase()) === userWhite)) { setSel(sel === name ? null : name); return; }
     if (!sel) return;
     const [from, to] = fromTo(expected.m);
     if (sel === from && name === to) { advance(); }
@@ -3182,6 +3236,7 @@ function EdgeCases({ pack, go, switchPack }) {
         pieces={miss === 2 && expected ? applyMoves([...applied, expected.m]) : pieces}
         last={miss === 2 && expected ? fromTo(expected.m) : lastM ? fromTo(lastM) : null}
         sel={sel}
+        fen={fen}
         marks={miss === 1 && expected ? [fromTo(expected.m)[0]] : []}
         onTap={miss === 2 || waiting ? undefined : tap}
       />
@@ -3217,7 +3272,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // learned packs added to the gauntlet tree
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.3·git";
+const APP_VER = "v6.3.1·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -3531,6 +3586,8 @@ function Gauntlet({ onExit }) {
     const pc = pieces[sq(name)];
     if (!sel) { if (pc && pc === pc.toUpperCase()) setSel(name); return; }
     if (sel === name) { setSel(null); return; }
+    // switching to another of your own pieces is a re-selection, never a move
+    if (pc && pc === pc.toUpperCase()) { setSel(name); return; }
     if (sel + name === expFT[0] + expFT[1]) {
       const door = k === 0 ? "start" : (sans[k - 1] || "?");
       if (miss === 0) { setHit((h) => ({ ...h, [key]: true })); bumpConf(key, true, door, Date.now() - shownRef.current); }
@@ -3886,7 +3943,7 @@ function Gauntlet({ onExit }) {
         </div>
       )}
       <EvalBar pieces={pieces} hist={hist} k={k} />
-      <Board pieces={pieces} last={lastTok ? fromTo(lastTok) : null} sel={sel}
+      <Board pieces={pieces} last={lastTok ? fromTo(lastTok) : null} sel={sel} fen={toFEN(pieces, hist, k)}
         marks={miss === 1 && expFT ? [expFT[0]] : []}
         onTap={onTap} frame={null} />
       <div className="flex gap-3">
@@ -4196,4 +4253,4 @@ export default function LinesMock() {
 }
 
 /* ---------- test exports (tools/*.mjs) — export-only edit, no behavior change ---------- */
-export { engineCore, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS };
+export { engineCore, sqName, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS };
