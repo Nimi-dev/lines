@@ -39,7 +39,7 @@ const step = (name, cond) => { assert.ok(cond, "FAILED: " + name); console.log("
 
 await page.goto("http://localhost:4189/", { waitUntil: "networkidle0" });
 step("app renders", await hasText("lines"));
-step("footer stamps v6.3.1·git", await hasText("v6.3.1·git"));
+step("footer stamps v6.3.2·git", await hasText("v6.3.2·git"));
 
 // packs view shows the new Philidor pack chip (in the shield family)
 await clickByText("Other defenses");
