@@ -106,7 +106,20 @@ const histOf = new Map();
   }
 }
 
-let checked = 0, skippedCastle = 0, checkExempt = 0;
+// Deliberate sacrifices: moves that lose material on the exchange and win it
+// back by force a move later. SEE is static and cannot see the follow-up, so
+// each one is listed here with the deep-engine verdict that justifies it —
+// obtained from `node tools/line-audit.mjs --sf`, never from anyone's memory.
+// A listed move that is NOT material-losing fails the run, so the list cannot
+// rot into a blanket excuse.
+const SACS = [
+  { packId: "hanham", san: "7.Bxf7+!", why: "Stockfish 18 d16: TOP move at +1.68 — 7...Kxf7 8.Qxd8 wins the queen; after 8...Bb4+ only 9.Qd2! keeps it" },
+  { packId: "hanham", san: "9.Qd2!", why: "Stockfish 18 d16: TOP move at +1.74, and the ONLY one — the queen blocks the check and is offered back on White's terms (9.c3?? +0.01, 9.Bd2?? -0.02). After 9...Bxd2+, 10.Nxd2 +1.58" },
+];
+const isSac = (u) => SACS.find((x) => x.packId === u.packId && (u.san || "") === x.san);
+
+let checked = 0, skippedCastle = 0, checkExempt = 0, sacExempt = 0;
+const sacsSeen = new Set();
 const losers = [];
 for (const [key, u] of entries) {
   assert.equal(key[64], "0", `user-move position not White to move: ${key}`);
@@ -123,6 +136,8 @@ for (const [key, u] of entries) {
     nb[t] = nb[f]; nb[f] = null;
     const fenAfter = toFEN(nb, [...hist, u.m], hist.length + 1);
     if (!hasLegalRecapture(fenAfter, t)) { checkExempt++; continue; }
+    const sac = isSac(u);
+    if (sac) { sacExempt++; sacsSeen.add(sac.san); console.log(`  sacrifice on the record: ${sac.san} (SEE ${net}) — ${sac.why}`); continue; }
     losers.push({ san: u.san || u.m, m: u.m, packId: u.packId, net });
   }
 }
@@ -132,4 +147,7 @@ for (const L of losers) {
   console.error(`  LOSING MOVE ${L.san} (${L.m}) in ${chip}: SEE ${L.net}`);
 }
 assert.equal(losers.length, 0, `${losers.length} material-losing scripted move(s) in the tree`);
-console.log(`see-audit: ${checked} scripted White moves across ${entries.length} tree positions — zero material-losing (${skippedCastle} castling exempt, ${checkExempt} check-legality exempt).`);
+const staleSacs = SACS.filter((x) => !sacsSeen.has(x.san));
+assert.equal(staleSacs.length, 0,
+  `stale SACS entries (listed but not material-losing in the tree — remove them): ${staleSacs.map((x) => x.packId + " " + x.san).join(", ")}`);
+console.log(`see-audit: ${checked} scripted White moves across ${entries.length} tree positions — zero material-losing (${skippedCastle} castling exempt, ${checkExempt} check-legality exempt, ${sacExempt} verified sacrifice${sacExempt === 1 ? "" : "s"}).`);

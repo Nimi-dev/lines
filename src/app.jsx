@@ -1037,6 +1037,208 @@ const PHILIDOR = {
       reason: "4.Nxd4 — a free Scotch-like center; his d6 pawn now just blocks his own bishop." },
   ],
 };
+/* The sound Petroff. The 🎭 Petroff pack collects the toll from the premature
+   copy; this one is what a prepared opponent actually plays, and where that
+   pack's edge line used to run out of moves. Every White move verified with
+   Stockfish 18 (see tools/line-audit.mjs --sf). */
+const RUSSIAN = {
+  id: "russian", family: "shield", chip: "🪆 Russian", badge: "🪆 RUSSIAN GAME · THE REAL PETROFF · WHITE",
+  morphs: [{ ply: 5, when: "If he copies too early with 3...Nxe4", to: "petroff", note: "the toll booth — a whole queen for a move order" }],
+  chunks: { A: "Chunk A · The correct order", B: "Chunk B · The two-square center", C: "Chunk C · The c4 question" },
+  chunkGoals: {
+    A: "He evicts your knight before copying, so no discovery ever exists. Accept it: you get a free hand in the center and a lead in development instead of a trick.",
+    B: "Build the d4/Bd3 center and castle. His knight sits proudly on e4 and has nowhere to go — that is the whole story of this opening.",
+    C: "Ask the d5 pawn a question with c4. When this chunk ends his knight has been chased to b4, your pieces are all out, and the pressure is permanent.",
+  },
+  dream: [
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He answers in the center." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Attack e5 and wait for the defender." },
+    { m: "g8f6", san: "2...Nf6", chunk: "A", note: "The Petroff — he does not defend the pawn, he counterattacks yours. One of the soundest defenses in chess." },
+    { m: "f3e5", san: "3.Nxe5", chunk: "A", anchor: true, note: "Take, and make him prove he knows the order." },
+    { m: "d7d6", san: "3...d6!", chunk: "A", note: "The move that separates the prepared from the hopeful. Evicting the knight FIRST kills every discovery before it can exist — the toll booth is closed.",
+      why: { q: "The other pack wins a queen after 3...Nxe4?. Why is one move order worth a whole queen?", a: "Because the trap is not about the knight, it is about an alignment. 4.Qe2 loads an x-ray down the e-file through two knights at his king, and any knight that leaves fires it. By spending a move to evict your knight first, he removes one of the two blockers on his own terms — and the gun never gets loaded. Move order is not politeness. It is which tactics are allowed to exist." } },
+    { m: "e5f3", san: "4.Nf3", chunk: "A", note: "Home to the useful square, watching d4 and e5 and supporting the break that is coming." },
+    { m: "f6e4", san: "4...Nxe4", chunk: "A", note: "NOW the copy is safe — your knight has already left, so there is nothing to discover." },
+    { m: "d2d4", san: "5.d4", chunk: "B", anchor: true, note: "The break that defines the position. You take the big center while his knight stands in the middle of the board with no support behind it." },
+    { m: "d6d5", san: "5...d5", chunk: "B", note: "Forced, and correct — the pawn is the only thing that will ever hold that knight on e4." },
+    { m: "f1d3", san: "6.Bd3", chunk: "B", anchor: true, note: "Develop at the intruder. The bishop takes the b1-h7 diagonal and stares straight through e4.",
+      why: { q: "His knight on e4 looks magnificent. Why is it actually his problem?", a: "Because it is a piece that cannot be improved. It is held by one pawn, it has no square to advance to, and every developing move you make asks it a question — Bd3 stares at it, Re1 lines up behind it, Nbd2 offers a trade it cannot decline on good terms. A centralized piece with no future is a liability wearing a nice suit. Judge outposts by where they can GO, not by where they stand." } },
+    { m: "f8e7", san: "6...Be7", chunk: "B", note: "The main line: develop, castle, and keep the knight defended by the d5 pawn." },
+    { m: "e1g1,h1f1", san: "7.O-O", chunk: "B", note: "King safe, rook toward the e-file. Nothing clever is required here — the position rewards completing development faster than he can." },
+    { m: "b8c6", san: "7...Nc6", chunk: "C", note: "Developing with pressure on d4 — his most natural try." },
+    { m: "c2c4", san: "8.c4", chunk: "C", anchor: true, note: "The question. The d5 pawn is the only defender of his knight, so you attack the defender rather than the knight." },
+    { m: "c6b4", san: "8...Nb4", chunk: "C", note: "His best: hit the d3 bishop before it can take on e4, and try to trade off your good piece." },
+    { m: "d3e2", san: "9.Be2", chunk: "C", note: "Step aside and keep the bishop. Retreating is not a concession when the alternative is trading your best minor piece for a knight that had to move anyway." },
+    { m: "e8g8,h8f8", san: "9...O-O", chunk: "C", note: "He tucks the king away and completes development." },
+    { m: "b1c3", san: "10.Nc3", chunk: "C", anchor: true, note: "The payoff. Every piece is out, c4 keeps asking d5 the question, and his knight on e4 must be traded or retreated on your terms. No trap here — a permanent pull against the soundest defense in chess, which is exactly what it is worth." },
+  ],
+  promise: {
+    eyebrow: "The promise · move 10", headline: "No trick. A permanent question.",
+    plyCount: 19, last: ["b1", "c3"], marks: ["e4", "c4"],
+    body: "Nothing is hanging and nobody is winning material. Against the soundest defense in chess, where does White's pull actually live?",
+    revealTitle: "10.Nc3",
+    reveal: "In two places: the c4 pawn asking d5 a question it cannot answer for free, and a black knight on e4 that looks wonderful and can never improve. Your pieces all have a next move; his best piece has only retreats. That is what an edge against a sound defense looks like — not a refutation, a question he has to keep answering.",
+    chip: "3...d6! is the correct order and the majority club choice — this is the Petroff you should expect to face.",
+  },
+  danger: {
+    eyebrow: "The edge case · the other bishop", headline: "6...Bd6 — the active square.",
+    base: null, baseCount: 11,
+    plies: [
+      { m: "f8d6", san: "6...Bd6", note: "The second main setup: the bishop eyes h2 instead of tucking in on e7, and Black plans ...O-O and ...c6 to build a wall." },
+      { m: "e1g1,h1f1", san: "7.O-O", note: "Same move, same reason. Castle first and let him show you the setup before you commit the queenside." },
+      { m: "e8g8,h8f8", san: "7...O-O", note: "He castles into the same structure." },
+      { m: "c2c4", san: "8.c4", note: "The same question, asked on schedule. Whatever bishop he chose, d5 is still the pawn holding everything together." },
+      { m: "c7c6", san: "8...c6", note: "The difference: he props the d5 pawn with another pawn instead of a piece. Solid — and it costs him the c6 square his knight wanted." },
+      { m: "f1e1", san: "9.Re1", note: "The rook joins the file his knight is sitting on. Simple, strong, and better than rushing to resolve the center." },
+      { m: "c8g4", san: "9...Bg4", note: "Pinning the f3 knight to add pressure on d4 — his most testing continuation." },
+      { m: "h2h3", san: "10.h3", note: "Question the pin at once. He must take, retreat, or hold — and every answer costs him something, while your position has no weaknesses to fix. The c6 wall means his light-squared bishop is his only active piece; trading or chasing it is the whole plan." },
+    ],
+    ledgerTitle: "How the Petroff is met at move 6 (estimate)",
+    ledger: [
+      { label: "6...Be7 — the main line", pct: 46, color: C.gold },
+      { label: "6...Bd6 — the active square", pct: 34, color: C.red },
+      { label: "Other (...Nc6, ...Bf5)", pct: 20, color: C.muted },
+    ],
+    survivalTitle: "One recipe for the whole opening",
+    survival: "Bd3, castle, c4, and put a rook on e1. In that order, against almost anything. The Petroff has no refutation — your edge comes from asking the d5 pawn a question every single move while his knight on e4 runs out of future. Stop looking for a knockout and the position plays itself.",
+    bailoutTitle: "The queenless lane — move 5",
+    bailoutMoves: ["e2e4","e7e5","g1f3","g8f6","f3e5","d7d6","e5f3","f6e4","d1e2"],
+    bailoutLast: ["d1", "e2"],
+    bailoutNote: "5.Qe2 — pin the knight, invite the trade, and steer toward a dry queenless middlegame with a tiny structural pull. Far less theory than 5.d4, and far less to play for. Take this road when you want a short game, not a good one.",
+  },
+  drills: [
+    { id: "ru1", kind: "move", plyCount: 8, from: "d2", to: "d4",
+      prompt: "He played the correct order and took on e4. Claim what the order cost him.",
+      hints: ["His knight is in the middle of the board with nothing behind it.", "Take the center while he is still holding a piece there."],
+      reason: "5.d4 — the big center, and the e4 knight now needs a pawn to survive." },
+    { id: "ru2", kind: "move", plyCount: 10, from: "f1", to: "d3",
+      prompt: "He propped the knight with 5...d5. Develop — at the intruder.",
+      hints: ["Which diagonal points through e4?", "Development and pressure in one move."],
+      reason: "6.Bd3 — the bishop takes the long diagonal and stares through the knight that cannot improve." },
+    { id: "ru3", kind: "move", plyCount: 14, from: "c2", to: "c4",
+      prompt: "Everything is developed and castled. Ask the question.",
+      hints: ["Don't attack the knight — attack what holds it.", "One pawn move puts the whole center in question."],
+      reason: "8.c4 — d5 is the knight's only support, so that is the pawn you argue with." },
+    { id: "ru4", kind: "goal",
+      prompt: "Against a defense with no refutation, what are you actually playing for?",
+      options: [
+        "A permanent question: c4 against d5, and a knight on e4 with no square to improve to",
+        "A forced win of the e4 knight",
+        "A kingside mating attack against the castled king",
+      ], correct: 0,
+      reason: "Knowing there is no knockout is what stops you forcing one. Against sound defenses the edge is a question the opponent must keep answering — and answering costs time, every time." },
+    { id: "ru5", kind: "move", danger: true, plyCount: 11, extra: ["f8d6"],
+      from: "e1", to: "g1",
+      prompt: "He chose the active 6...Bd6. Your move.",
+      hints: ["Nothing has changed about your plan — do the next thing on the list.", "Safety before commitment."],
+      reason: "7.O-O — castle, then c4 and Re1 as always. The setup does not care which bishop he picked." },
+  ],
+};
+
+/* The Philidor that a prepared opponent actually plays: 3...Nd7, the Hanham.
+   The 🪨 Philidor pack punishes the pin; this one meets the setup that does not
+   hang anything — and carries the trap that the natural 4...Ngf6 walks into.
+   Every White move verified with Stockfish 18. */
+const HANHAM = {
+  id: "hanham", family: "shield", chip: "🐢 Hanham", badge: "🐢 PHILIDOR · HANHAM 3...Nd7 · WHITE",
+  morphs: [{ ply: 5, when: "If he plays the pin 3...Bg4 instead", to: "philidor", note: "the Opera Game line — two targets, one defender" }],
+  chunks: { A: "Chunk A · The shell", B: "Chunk B · The four-square box", C: "Chunk C · The clamp" },
+  chunkGoals: {
+    A: "He builds the Hanham shell: pawns on e5 and d6, knight to d7, everything defended and nothing developed. Take the aggressive square while he is still building.",
+    B: "Castle, put the rook on the e-file, develop the queenside knight. His whole army lives on the back two ranks — you simply finish first.",
+    C: "a4 takes his only pawn break away. When this chunk ends he is solid, cramped and out of ideas, and you have both the space and the plan.",
+  },
+  dream: [
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He meets you in the center." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Attack e5. The piece he defends with names the opening." },
+    { m: "d7d6", san: "2...d6", chunk: "A", note: "The Philidor: a pawn guards e5 so no piece has to." },
+    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The break, exactly as in the other Philidor pack. Hit the strong point while his pieces are still at home." },
+    { m: "b8d7", san: "3...Nd7", chunk: "A", note: "The Hanham — the modern main line and the reason the Philidor is still played. He holds e5 a second time without blocking the c-pawn or hanging the bishop.",
+      why: { q: "The other Philidor pack wins material by move 7. Why does nothing like that work here?", a: "Because 3...Nd7 hangs nothing. The pin line loses to a double attack on b7 and f7; here the b7 pawn keeps its defender and f7 keeps its king. What he pays instead is space and time — the knight on d7 blocks his own bishop, and the whole army needs two more moves than yours to breathe. Against a setup with no loose pieces, stop looking for tactics and start counting tempi." } },
+    { m: "f1c4", san: "4.Bc4", chunk: "A", anchor: true, note: "The most testing square. The bishop points at f7, which the d7 knight has just made harder to defend — and it is the move that punishes the natural 4...Ngf6 (see Edge cases)." },
+    { m: "c7c6", san: "4...c6", chunk: "B", note: "The accurate reply: cover b5 and d5, prepare ...Qc7 and ...b5. This is the move a prepared Philidor player knows." },
+    { m: "e1g1,h1f1", san: "5.O-O", chunk: "B", note: "King safe first — there is no rush in a position where the opponent needs three more moves than you." },
+    { m: "f8e7", san: "5...Be7", chunk: "B", note: "The modest developer. Every Hanham bishop goes here; it defends and does nothing else." },
+    { m: "f1e1", san: "6.Re1", chunk: "B", anchor: true, note: "The rook lands on the file his e5 pawn is standing on. This is the quiet move that makes ...exd4 permanently unattractive." },
+    { m: "g8f6", san: "6...Ngf6", chunk: "B", note: "Now it is safe: with the rook committed to e1 and the center held, the knight comes out without dropping a pawn." },
+    { m: "b1c3", san: "7.Nc3", chunk: "B", note: "The last minor piece. Simple development beats cleverness here — you are ahead, and every trade you avoid keeps him cramped." },
+    { m: "e8g8,h8f8", san: "7...O-O", chunk: "C", note: "He completes the shell. Solid, sound, and one move short of an actual plan." },
+    { m: "a2a4", san: "8.a4", chunk: "C", anchor: true, note: "The clamp. His only real break is ...b5, and this takes it away before he can prepare it.",
+      why: { q: "A rook's pawn on move eight, with the center unresolved. How is that the best move?", a: "Because you are playing against his plan, not your own. Count his breaks: ...d5 is impossible while d4 and e4 are both defended, ...f5 wrecks his own king, so the entire Hanham lives on ...b5 — and a4 deletes it. A cramped position with a break is a coiled spring; a cramped position with no break is just cramped. When the opponent has exactly one idea, spend a move on it and he has none." } },
+    { m: "a7a5", san: "8...a5", chunk: "C", note: "Stopping a5 in return — and permanently weakening b5. He has traded his one break for a hole." },
+    { m: "h2h3", san: "9.h3", chunk: "C", anchor: true, note: "The payoff position, and a useful move in a position with no hurry: ...Ng4 and ...Bg4 are off the table forever. His shell is intact and completely passive; you have Be3, Qd2, Nd5 and the b5 square, and all the time in the world to use them." },
+  ],
+  promise: {
+    eyebrow: "The promise · move 9", headline: "Solid, and out of ideas.",
+    plyCount: 17, last: ["h2", "h3"], marks: ["b5", "e5"],
+    body: "Every black piece is defended and nothing can be won. So why is this comfortable for White for the next thirty moves?",
+    revealTitle: "9.h3",
+    reveal: "Because he has no break left. ...d5 never works with both centre pawns guarded, ...f5 opens his own king, and a4 deleted ...b5 — the one idea the Hanham is built on. You hold more space, both bishops have futures, and b5 is a hole you can occupy at leisure. Positions are not equal because nothing hangs; they are equal when both sides have something to do.",
+    chip: "3...Nd7 is the main line of the modern Philidor — the version that does not lose material by force.",
+  },
+  danger: {
+    eyebrow: "The edge case · the natural developing move", headline: "4...Ngf6? — and it loses a pawn by force.",
+    base: null, baseCount: 7,
+    plies: [
+      { m: "g8f6", san: "4...Ngf6?", note: "The move nine club players in ten make here. It develops, it defends, and it drops a pawn to a forcing sequence that starts with a piece." },
+      { m: "d4e5", san: "5.dxe5!", note: "Open the position while his king is still in the middle. Every capture from here is forced." },
+      { m: "d7e5", san: "5...Nxe5", note: "Forced in spirit — 5...dxe5 6.Ng5 is worse, and 5...Nxe4 loses to 6.Qd5." },
+      { m: "f3e5", san: "6.Nxe5", note: "Take again. Keep the sequence forcing and do not give him a free move." },
+      { m: "d6e5", san: "6...dxe5", note: "He restores material, and his king is now stuck on e8 in front of an open d-file." },
+      { m: "c4f7", san: "7.Bxf7+!", note: "The point. A bishop for a pawn — because the king must take, and the queen falls next move.",
+        why: { q: "You are giving up a bishop for a pawn. What makes this different from hope?", a: "Nothing about it is hope: every move in the sequence is forced and countable. 7...Kxf7 is the only legal answer to the check, and it removes the king from the d-file — where your queen already faces his. The sacrifice is not buying an attack, it is buying a geometry: after the king steps to f7, Qxd8 is check-free, undefended and unavoidable. Sacrifice for a forced sequence, never for a feeling." } },
+      { m: "e8f7", san: "7...Kxf7", note: "Forced — and the king has just walked off the d-file it was blocking." },
+      { m: "d1d8", san: "8.Qxd8", note: "Collecting the queen. And now the only real test of the whole line arrives." },
+      { m: "f8b4", san: "8...Bb4+!", note: "The in-between check that saves him — his bishop attacks your queen and checks your king at the same time, so he wins the queen straight back. This is where the line is actually decided." },
+      { m: "d8d2", san: "9.Qd2!", note: "The ONLY move that keeps the advantage. Your queen blocks the check and offers herself back on your terms. (9.c3?? and 9.Bd2?? both throw the entire game away — the engine drops from +1.7 to level.)" },
+      { m: "b4d2", san: "9...Bxd2+", note: "He takes, because everything else is worse — and now the recapture matters." },
+      { m: "b1d2", san: "10.Nxd2", note: "With the KNIGHT, developing a piece and keeping everything guarded. (10.Bxd2 and 10.Kxd2 are both far worse.) The dust settles: you are a clean pawn up, his king sits on f7 with castling gone forever, and his structure is broken. That is what 4...Ngf6? costs." },
+    ],
+    ledgerTitle: "Black's fourth move against 4.Bc4 (estimate)",
+    ledger: [
+      { label: "4...c6 — the accurate Hanham", pct: 41, color: C.red },
+      { label: "4...Ngf6? — natural, loses a pawn", pct: 38, color: C.gold },
+      { label: "Other (...Be7, ...exd4)", pct: 21, color: C.muted },
+    ],
+    survivalTitle: "Against the accurate 4...c6",
+    survival: "There is no trick against 4...c6 — castle, Re1, Nc3, a4. Take the ...b5 break away and play the long game with more space. Learn the trap for the third of opponents who develop naturally, and the setup for the rest.",
+    bailoutTitle: "The no-theory lane — move 4",
+    bailoutMoves: ["e2e4","e7e5","g1f3","d7d6","d2d4","b8d7","b1c3"],
+    bailoutLast: ["b1", "c3"],
+    bailoutNote: "4.Nc3 — develop, keep the tension, and reach a normal game with a small edge and nothing to memorize. The Bc4 road is sharper and carries the trap; this one asks nothing of your memory.",
+  },
+  drills: [
+    { id: "hn1", kind: "move", plyCount: 6, from: "f1", to: "c4",
+      prompt: "He built the Hanham shell with 3...Nd7. Take the testing square.",
+      hints: ["Which square did the knight on d7 just make harder to defend?", "Point at the weakest square in his camp."],
+      reason: "4.Bc4 — aiming at f7, and loading the trap that 4...Ngf6? walks into." },
+    { id: "hn2", kind: "move", plyCount: 14, from: "a2", to: "a4",
+      prompt: "He has castled into a solid shell. Play against his plan.",
+      hints: ["Count his pawn breaks. How many are there really?", "Delete the only one before he prepares it."],
+      reason: "8.a4 — ...b5 was the Hanham's whole idea, and now it is gone." },
+    { id: "hn3", kind: "goal",
+      prompt: "Why is this comfortable for White when nothing can be won?",
+      options: [
+        "He has no pawn break left, so he has space to lose and nothing to do with it",
+        "White wins the e5 pawn by force",
+        "Black's king is unsafe on g8",
+      ], correct: 0,
+      reason: "Equality is not 'nothing hangs' — it is 'both sides have something to do'. Learning to take away plans is worth more than learning another twenty moves of theory." },
+    { id: "hn4", kind: "move", danger: true, plyCount: 7, extra: ["g8f6"],
+      from: "d4", to: "e5",
+      prompt: "He developed naturally with 4...Ngf6. Punish it — first move of the sequence.",
+      hints: ["Open the position while his king is still in the middle.", "Everything from here is forced. Start with the capture."],
+      reason: "5.dxe5! — and the whole sequence runs to Bxf7+ and Qxd8." },
+    { id: "hn5", kind: "move", danger: true,
+      moves: ["e2e4","e7e5","g1f3","d7d6","d2d4","b8d7","f1c4","g8f6","d4e5","d7e5","f3e5","d6e5","c4f7","e8f7","d1d8","f8b4"],
+      from: "d8", to: "d2",
+      prompt: "You won the queen — and he hit you with 8...Bb4+. Only one move keeps the win.",
+      hints: ["He is checking you AND attacking your queen. One move must answer both.", "Block the check with the piece he is attacking."],
+      reason: "9.Qd2! — block and offer the trade on your terms. 9.c3?? and 9.Bd2?? both hand the whole advantage back; after 9...Bxd2+ recapture with the KNIGHT." },
+  ],
+};
 
 const LANGE = {
   id: "lange", family: "italian", chip: "🌀 Max Lange", badge: "🌀 MAX LANGE ATTACK · WHITE",
@@ -1772,7 +1974,7 @@ const FAMILIES = [
   { id: "knights", rep: false, label: "🐴 Four Knights", blurb: "⚔ Off-repertoire: 3.Nc3 collides with your 3.d4 — and these two even collide with each other at move 4. Museum pieces with teeth." },
 ];
 
-const PACKS = [MIESES, CLASSICAL, STEINITZ, HOOVER, DECLINES, SCOTCH, GRECO, MOLLER, SPEAR, LANGE, FRIED, LEGAL, MIRROR, HALLO, ALIEN, MORRA, PETROFF, PHILIDOR, BUSCH];
+const PACKS = [MIESES, CLASSICAL, STEINITZ, HOOVER, DECLINES, SCOTCH, GRECO, MOLLER, SPEAR, LANGE, FRIED, LEGAL, MIRROR, HALLO, ALIEN, MORRA, PETROFF, RUSSIAN, PHILIDOR, HANHAM, BUSCH];
 
 
 
@@ -1945,6 +2147,42 @@ const EXTRAS = {
           { m: "d5b4", san: "9...Nb4?!" },
           { m: "a2a3", san: "10.a3!" } ],
         note: "Ask the jump to prove itself: the ...Nc2+ fork never existed, and a3 sends the knight to its only square — d5. Do NOT cash it with cxd5 (the a6 bishop x-rays e2 the moment c4 steps away); play g3 and Bg2 instead, and the knight becomes a target on a highway you own. (Not 10.Qe4? — the natural centralization loses the game to 10...d5!: the queen retreats, the center rolls, and ...Nc2 tricks follow for real.)" },
+    ],
+  },
+  russian: {
+    hints: {
+      A: "He evicts before he copies. Nothing tactical exists here — ask what the correct order costs him instead.",
+      B: "His knight is the most advanced piece on the board and the least useful. Develop straight at it.",
+      C: "Do not attack the knight. Attack the pawn that is the only thing holding it there.",
+    },
+    finalWhy: "No knockout exists against the Petroff, and pretending otherwise is how players lose to it. The futures show the two shapes the pull takes: chase the knight or pressure the pawn — both are pleasant, neither is forced.",
+    futures: [
+      { t: "He develops the bishop", moves: [
+          { m: "c8e6", san: "10...Be6" },
+          { m: "c1f4", san: "11.Bf4" } ],
+        note: "He shores up d5 with a piece, so you finish development and take the diagonal his bishop just left. Every piece is out, c4 still asks the question, and the b4 knight is offside — a comfortable game with a clear plan and no risk." },
+      { t: "He goes to the active square", moves: [
+          { m: "c8f5", san: "10...Bf5" },
+          { m: "a2a3", san: "11.a3" } ],
+        note: "The bishop is more active on f5, but it stopped defending d5 — so the knight on b4 gets kicked immediately and must go to the rim or come home. Tempo and structure, which is what this whole opening pays in." },
+    ],
+  },
+  hanham: {
+    hints: {
+      A: "He is building a shell, not a plan. Take the square that points at his weakest spot while he is still assembling.",
+      B: "You are three moves ahead in development against a position with no counterplay. Just finish.",
+      C: "Play against HIS plan. He has exactly one pawn break — find it and delete it.",
+    },
+    finalWhy: "The Hanham does not lose material, so the payoff is positional and permanent: no break, less space, a hole on b5. The futures show that the setup is move-order proof — Be3 is the move whatever he tries.",
+    futures: [
+      { t: "He makes luft", moves: [
+          { m: "h7h6", san: "9...h6" },
+          { m: "c1e3", san: "10.Be3" } ],
+        note: "A useful move in a position with nothing to do is still a move spent. You complete the ideal setup: Be3 eyes the queenside dark squares, Qd2 and Nd5 come next, and b5 is yours whenever you want it." },
+      { t: "He lines the queen up", moves: [
+          { m: "d8c7", san: "9...Qc7" },
+          { m: "c1e3", san: "10.Be3" } ],
+        note: "Same answer. Be3 is right against every Hanham setup because it develops, guards d4 and points at the queenside where his hole is — a setup you can play from memory of the SHAPE rather than the moves." },
     ],
   },
   petroff: {
@@ -2254,7 +2492,7 @@ const buildTree = (packIds) => {
   return { REP: rep, REPX: repx, RUNS: buildRuns(packIds, repx), packIds };
 };
 const CORE_PACK_IDS = PACKS.filter((p) => p.family === "scotch").map((p) => p.id);
-const LEARNABLE_PACK_IDS = ["petroff", "philidor"]; // shield packs that can join the gauntlet once learned
+const LEARNABLE_PACK_IDS = ["petroff", "russian", "philidor", "hanham"]; // shield packs that can join the gauntlet once learned
 const DEFAULT_TREE = buildTree(CORE_PACK_IDS);
 const REP = DEFAULT_TREE.REP, REPX = DEFAULT_TREE.REPX, RUNS = DEFAULT_TREE.RUNS;
 
@@ -3404,7 +3642,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // learned packs added to the gauntlet tree
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.3.3·git";
+const APP_VER = "v6.4·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
