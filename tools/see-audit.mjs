@@ -5,8 +5,7 @@
 import assert from "node:assert/strict";
 import { loadApp } from "./_load.mjs";
 
-const { PACKS, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS, engineCore, applyMoves, toFEN, posKey } = await loadApp();
-const { REP, REPX } = buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]); // audit the FULL gauntlet-able tree
+const { PACKS, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS, engineCore, applyMoves, toFEN, posKey } = await loadApp();
 
 const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
 const FILE = (i) => i % 8, RANK = (i) => (i / 8) | 0;
@@ -60,14 +59,14 @@ function seeSwap(b, t, side) {
   return Math.max(0, captured - seeSwap(nb, t, side === "w" ? "b" : "w"));
 }
 
-// net material outcome of playing single-token move f→t as White
-function seeOfMove(b, tok) {
+// net material outcome of playing single-token move f→t for `side` ("w"/"b")
+function seeOfMove(b, tok, side = "w") {
   const sqi = (n) => (n.charCodeAt(1) - 49) * 8 + (n.charCodeAt(0) - 97);
   const f = sqi(tok.slice(0, 2)), t = sqi(tok.slice(2, 4));
   const capturedVal = b[t] ? VAL[b[t].toLowerCase()] : 0;
   const nb = b.slice();
   nb[t] = nb[f]; nb[f] = null;
-  return capturedVal - seeSwap(nb, t, "b");
+  return capturedVal - seeSwap(nb, t, side === "w" ? "b" : "w");
 }
 
 const decodeKey = (key) => key.slice(0, 64).split("").map((ch) => (ch === "." ? null : ch));
@@ -89,47 +88,65 @@ const hasLegalRecapture = (fenAfter, targetSq) => {
   assert.ok(seeOfMove(b2, "f3d4") >= 0, "self-check failed: sound 4.Nxd4 wrongly flagged");
 }
 
-const entries = Object.entries(REP.user);
-assert.ok(entries.length > 0, "repertoire tree is empty — REP.user has no positions");
+/* documented waivers (the doctrine's "waive in writing"): intentional
+   sacrifices whose compensation is tactical, verified by deep engine, and part
+   of the pack's teaching. Every waiver must be exercised or the audit fails. */
+const SEE_WAIVERS = {
+  "qpawn|2...c5!":
+    "SF d55: dead equal and SF's own top choice — the c5 pawn is only nominally capturable (3.dxc5 e6!/...Qa5+ regains it by force); one-move-delayed regains are beyond static exchange. Waived 2026-08-19.",
+  "alien|6.Nxf7!!":
+    "Documented practical sacrifice — the pack's entire premise. SF d42: the sac is -162cp vs -18cp for the sober 6.Nf3 retreat; it is a knowing, labeled trap weapon for club opposition (the ALI edge line teaches the position after the correct defense 7...c5!). Waived per the doctrine's waive-in-writing clause, 2026-08-19.",
+};
 
-// histories per position (for legal-recapture FENs)
-const histOf = new Map();
-{
-  const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = (g.charCodeAt(3) - 49) * 8 + (g.charCodeAt(2) - 97), fr = (g.charCodeAt(1) - 49) * 8 + (g.charCodeAt(0) - 97); nb[f] = nb[fr]; nb[fr] = null; } return nb; };
-  for (const pt of REPX.paths) {
-    let b = applyMoves([]); const hist = [];
-    for (let k = 0; k < pt.toks.length; k++) {
-      const key = posKey(b, k % 2);
-      if (k % 2 === 0 && !histOf.has(key)) histOf.set(key, hist.slice());
-      b = applyTok(b, pt.toks[k]); hist.push(pt.toks[k]);
+function auditTree(label, tree, side) {
+  const { REP, REPX } = tree;
+  const userTurn = side === "black" ? "1" : "0";
+  const entries = Object.entries(REP.user);
+  assert.ok(entries.length > 0, `[${label}] tree is empty`);
+  const histOf = new Map();
+  {
+    const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = (g.charCodeAt(3) - 49) * 8 + (g.charCodeAt(2) - 97), fr = (g.charCodeAt(1) - 49) * 8 + (g.charCodeAt(0) - 97); nb[f] = nb[fr]; nb[fr] = null; } return nb; };
+    for (const pt of REPX.paths) {
+      let b = applyMoves([]); const hist = [];
+      for (let k = 0; k < pt.toks.length; k++) {
+        const key = posKey(b, k % 2);
+        if (String(k % 2) === userTurn && !histOf.has(key)) histOf.set(key, hist.slice());
+        b = applyTok(b, pt.toks[k]); hist.push(pt.toks[k]);
+      }
     }
   }
-}
-
-let checked = 0, skippedCastle = 0, checkExempt = 0;
-const losers = [];
-for (const [key, u] of entries) {
-  assert.equal(key[64], "0", `user-move position not White to move: ${key}`);
-  const b = decodeKey(key);
-  if (u.m.includes(",")) { skippedCastle++; continue; } // castling: no exchange on a landing square
-  const net = seeOfMove(b, u.m);
-  checked++;
-  if (net < 0) {
-    // before flagging: is the landing square actually capturable? (check-legality)
-    const hist = histOf.get(key) || [];
-    const nb = b.slice();
-    const sqi = (n) => (n.charCodeAt(1) - 49) * 8 + (n.charCodeAt(0) - 97);
-    const f = sqi(u.m.slice(0, 2)), t = sqi(u.m.slice(2, 4));
-    nb[t] = nb[f]; nb[f] = null;
-    const fenAfter = toFEN(nb, [...hist, u.m], hist.length + 1);
-    if (!hasLegalRecapture(fenAfter, t)) { checkExempt++; continue; }
-    losers.push({ san: u.san || u.m, m: u.m, packId: u.packId, net });
+  let checked = 0, skippedCastle = 0, checkExempt = 0, waived = 0;
+  const losers = [];
+  const usedWaivers = new Set();
+  for (const [key, u] of entries) {
+    assert.equal(key[64], userTurn, `[${label}] user-move position has wrong side to move`);
+    const b = decodeKey(key);
+    if (u.m.includes(",")) { skippedCastle++; continue; }
+    const net = seeOfMove(b, u.m, side === "black" ? "b" : "w");
+    checked++;
+    if (net < 0) {
+      const wkey = u.packId + "|" + u.san;
+      if (SEE_WAIVERS[wkey]) { waived++; usedWaivers.add(wkey); continue; }
+      const hist = histOf.get(key) || [];
+      const nb = b.slice();
+      const sqi = (n) => (n.charCodeAt(1) - 49) * 8 + (n.charCodeAt(0) - 97);
+      const f = sqi(u.m.slice(0, 2)), t = sqi(u.m.slice(2, 4));
+      nb[t] = nb[f]; nb[f] = null;
+      const fenAfter = toFEN(nb, [...hist, u.m], hist.length + 1);
+      if (!hasLegalRecapture(fenAfter, t)) { checkExempt++; continue; }
+      losers.push({ san: u.san || u.m, m: u.m, packId: u.packId, net });
+    }
   }
+  for (const L of losers) {
+    const chip = (PACKS.find((p) => p.id === L.packId) || {}).chip || L.packId;
+    console.error(`  [${label}] LOSING MOVE ${L.san} (${L.m}) in ${chip}: SEE ${L.net}`);
+  }
+  assert.equal(losers.length, 0, `[${label}] ${losers.length} material-losing scripted move(s)`);
+  return { checked, positions: entries.length, skippedCastle, checkExempt, waived, usedWaivers };
 }
 
-for (const L of losers) {
-  const chip = (PACKS.find((p) => p.id === L.packId) || {}).chip || L.packId;
-  console.error(`  LOSING MOVE ${L.san} (${L.m}) in ${chip}: SEE ${L.net}`);
-}
-assert.equal(losers.length, 0, `${losers.length} material-losing scripted move(s) in the tree`);
-console.log(`see-audit: ${checked} scripted White moves across ${entries.length} tree positions — zero material-losing (${skippedCastle} castling exempt, ${checkExempt} check-legality exempt).`);
+const rw = auditTree("white", buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]), "white");
+const rb = auditTree("black", buildTree(BLACK_PACK_IDS, "black"), "black");
+const exercised = new Set([...rw.usedWaivers, ...rb.usedWaivers]);
+for (const wkey of Object.keys(SEE_WAIVERS)) assert.ok(exercised.has(wkey), `unused SEE waiver: ${wkey} — remove it`);
+console.log(`see-audit: WHITE ${rw.checked}/${rw.positions} · BLACK ${rb.checked}/${rb.positions} — zero unexplained material losses (castle ${rw.skippedCastle + rb.skippedCastle}, check-legality ${rw.checkExempt + rb.checkExempt}, waived ${rw.waived + rb.waived}).`);

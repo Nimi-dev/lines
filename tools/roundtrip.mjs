@@ -27,7 +27,7 @@ function buildExport(T, { conf, days, lifeRuns, lifeClean, learnedSigs = {} }) {
     if (positions[k2].runs.indexOf(r.id) < 0) positions[k2].runs.push(r.id);
   });
   const runsDict = {};
-  RUNS.forEach((r) => { runsDict[r.sig] = { id: r.id, label: r.label, pack: r.packId, kind: r.kind, moves: r.sans.filter(Boolean).join(" ") }; });
+  RUNS.forEach((r) => { runsDict[r.sig] = { id: r.id, label: r.label, pack: r.packId, kind: r.kind, side: r.side, moves: r.sans.filter(Boolean).join(" ") }; });
   const mastery = {};
   const nowX = Date.now();
   Object.keys(conf).forEach((k2) => {
@@ -138,6 +138,7 @@ function roundtrip(T, label) {
 
 const dflt = roundtrip(buildTree(CORE_PACK_IDS), "core");
 const full = roundtrip(buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]), "core+learned");
+const blk = roundtrip(buildTree(app.BLACK_PACK_IDS, "black"), "black");
 
 /* ---- v6.2 export still restores (best-effort seed) ---- */
 {
@@ -166,4 +167,4 @@ for (const anchor of [
   assert.ok(src.includes(anchor), `src/app.jsx serializer/parser changed (anchor not found: ${anchor}) — update the ports in tools/roundtrip.mjs to match`);
 }
 
-console.log(`roundtrip: v6.3 exact equality on core (${dflt.positions} pos, ${dflt.runs} runs) and core+learned (${full.positions} pos, ${full.runs} runs); v6.2 exports seed correctly.`);
+console.log(`roundtrip: exact equality on core (${dflt.positions} pos/${dflt.runs} runs), core+learned (${full.positions}/${full.runs}), black (${blk.positions}/${blk.runs}); v6.2 exports seed correctly.`);

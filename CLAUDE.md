@@ -116,7 +116,16 @@ A proposal without its failure analysis attached is incomplete by definition.
   follows what actually gets played at the user's level.
 - Chess content answers to two machine gates: SEE audit (tools/see-audit.mjs,
   in CI) and the deep engine audit (tools/line-audit.mjs --cloud, run on any
-  content change — it caught 10.Qe4?, which the shallow engine cleared).
-  Three deliberate keeps are on record: 8.bxc3 / 9.Bd3! (Steinitz) and
-  8.Nc3 (Declines) are engine-suboptimal by ~1 pawn-fraction but sound,
-  winning, and simpler to teach than the engine's preference.
+  content change — it caught 10.Qe4? and 9.Bc4? in the Alien edge, both of
+  which shallower checks cleared). Both audits carry an explicit WAIVER table
+  (the checklist's waive-in-writing clause): every waived flag names its
+  engine number and its justification, and an unexercised waiver fails the
+  audit. Current waivers: the Alien Gambit's sacrifice complex (a labeled
+  practical weapon, −1.6 vs perfect defense, documented in its survival
+  text), teachability keeps in Steinitz/Declines, 7...b5! (kpawn), and the
+  SEE-blind 2...c5! (qpawn).
+- **The tree is two-sided** (v6.5): packs carry `side` ("white" default);
+  buildTree(ids, side) sets the user's ply parity, and Law 1 holds per side
+  with run sigs/ids unique across sides. The Black repertoire (kpawn/qpawn)
+  drills in Learn and the gauntlet with flipped boards; the story-room pages
+  remain White-only for now (black packs are filtered from the packs view).

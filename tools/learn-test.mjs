@@ -11,10 +11,12 @@ const app = await loadApp();
 const { PACKS, EXTRAS, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS, sq, posKey, START } = app;
 const H = { sq, posKey, START };
 const tree = buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]);
+const treeB = buildTree(app.BLACK_PACK_IDS, "black");
+const ALL = [...tree.RUNS, ...treeB.RUNS];
 
-// 1. every run has a complete, aligned, annotated doc with a payoff
+// 1. every run (both sides) has a complete, aligned, annotated doc with a payoff
 let annotated = 0;
-for (const run of tree.RUNS) {
+for (const run of ALL) {
   const pack = PACKS.find((p) => p.id === run.packId);
   const doc = buildLineDoc(pack, EXTRAS[run.packId], run, H);
   assert.equal(doc.plies.length, run.toks.length, `${run.id}: doc/toks length mismatch (${doc.plies.length} vs ${run.toks.length})`);
@@ -25,15 +27,20 @@ for (const run of tree.RUNS) {
   assert.ok(doc.payoff && doc.payoff.text && doc.payoff.text.length > 40, `${run.id}: payoff explanation missing/too thin`);
   annotated += doc.plies.filter((p) => p.note || p.why).length;
 }
-assert.ok(annotated > 150, `expected rich annotations across the tree, got ${annotated}`);
+assert.ok(annotated > 200, `expected rich annotations across the tree, got ${annotated}`);
 
-// 2. clusters: white side covers all packs in the tree; black side exists (empty for now)
-const clusters = buildClusters(PACKS, tree, CORE_PACK_IDS, LEARNABLE_PACK_IDS);
-const clusterRunCount = clusters.white.reduce((a, c) => a + c.runs.length, 0);
-assert.equal(clusterRunCount, tree.RUNS.length, "clusters must partition all runs");
+// 2. clusters partition all runs across both sides
+const clusters = buildClusters(PACKS, tree, treeB, CORE_PACK_IDS, LEARNABLE_PACK_IDS, app.BLACK_PACK_IDS);
+const clusterRunCount = clusters.white.reduce((a, c) => a + c.runs.length, 0) + clusters.black.reduce((a, c) => a + c.runs.length, 0);
+assert.equal(clusterRunCount, ALL.length, "clusters must partition all runs");
 assert.equal(clusters.white.length, CORE_PACK_IDS.length + LEARNABLE_PACK_IDS.length);
-assert.deepStrictEqual(clusters.black, []);
-assert.ok(clusters.white.every((c) => c.chip && c.group));
+assert.equal(clusters.black.length, app.BLACK_PACK_IDS.length);
+assert.ok([...clusters.white, ...clusters.black].every((c) => c.chip && c.group && c.runs.length > 0));
+// black runs carry side and odd-parity user keys
+for (const r of treeB.RUNS) {
+  assert.equal(r.side, "black");
+  assert.ok(r.userKeys.every((k) => k.endsWith("1")), `${r.id}: black user positions must be Black-to-move`);
+}
 
 // 3. status + learned gate + grandfathering
 const now = Date.parse("2026-08-20T08:00:00Z");
@@ -71,4 +78,4 @@ const r0 = tree.RUNS[0];
   assert.equal(pn[0].sig, tree.RUNS[3].sig, "practiceNext ranks by frequency x (1-R)");
 }
 
-console.log(`learn: ${tree.RUNS.length} line docs complete (${annotated} annotated plies), clusters partition the tree, gates and ranking verified.`);
+console.log(`learn: ${ALL.length} line docs complete (${annotated} annotated plies), clusters partition the tree, gates and ranking verified.`);
