@@ -81,7 +81,7 @@ const ALIEN = {
   },
   danger: {
     eyebrow: "The danger · the tax on the dream",
-    headline: "If he stays calm, you are just worse.",
+    headline: "7...c5! — the calm try, still not enough.",
     base: null, baseCount: 13,
     plies: [
       { m: "c6c5", san: "7...c5!", note: "The refutation. Cold-blooded: hit the center, ignore the ghosts." },
