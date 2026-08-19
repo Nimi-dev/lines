@@ -1,10 +1,12 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { MEM, retrievability, foldResult, owned, seedFromConf } from "./scoring.js";
+import { sanList, analyzeGames, packGains } from "./games.js";
 
 /* ---------- palette ---------- */
 const C = {
   ink: "#171310", surface: "#211B15", card: "#2A231B", line: "#3A3128",
   cream: "#EFE6D6", muted: "#A2947E",
-  boardLight: "#E9DCC3", boardDark: "#77593F",
+  boardLight: "#EBECD0", boardDark: "#779556", // chess.com green board
   gold: "#D9A441", goldSoft: "rgba(217,164,65,0.16)",
   red: "#CE4A36", redSoft: "rgba(206,74,54,0.16)",
   green: "#7BAE6E",
@@ -945,6 +947,91 @@ const PETROFF = {
   ],
 };
 
+const PHILIDOR = {
+  id: "philidor", family: "shield", chip: "🪨 Philidor", badge: "🪨 PHILIDOR · THE PASSIVE WALL · WHITE",
+  chunks: { A: "Chunk A · The wall declared", B: "Chunk B · The pin dissolved", C: "Chunk C · The opera bill" },
+  chunkGoals: {
+    A: "He guards e5 with a pawn instead of a piece: solid-looking, and one tempo of pressure from cracking. Open the center at once.",
+    B: "His pin 'develops' into your capture. Trade off the pin, recapture with the queen — and two of your pieces now stare at f7 and b7.",
+    C: "One queen move attacks two undefended points. Whichever he saves, you collect the other — the oldest winning geometry in chess.",
+  },
+  dream: [
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "" },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "" },
+    { m: "d7d6", san: "2...d6", chunk: "A", note: "The Philidor wall: a pawn guards e5 so no piece has to. Your most common non-Scotch reply — and the most passive." },
+    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The same break as the Scotch, one move earlier in spirit: hit e5 while his pieces still sleep.", why: { q: "Why attack the strong point he just defended?", a: "Because the defender he chose can't hold the job: the e5 pawn is guarded by d6, but d6 answers to YOUR d4 pawn. A pawn defending a pawn under central tension is a liability chain, not a wall — every exchange on e5/d4 opens lines toward a king that hasn't moved. Passive setups die by one well-timed break, not by assault." } },
+    { m: "c8g4", san: "3...Bg4?!", chunk: "B", note: "The pin — the classic club answer, played for 170 years. It loses material by force. (3...exd4 is the honest road: see Edge cases.)" },
+    { m: "d4e5", san: "4.dxe5!", chunk: "B", anchor: true, note: "Call the pin's bluff mid-air." },
+    { m: "g4f3", san: "4...Bxf3", chunk: "B", note: "He must cash the pin now — 4...dxe5?? 5.Qxd8+ Kxd8 6.Nxe5 just wins a pawn with Nxf7+ hanging over the ashes." },
+    { m: "d1f3", san: "5.Qxf3", chunk: "B", note: "Recapture with the piece that ATTACKS: the queen eyes b7 and f7 from f3 already." },
+    { m: "d6e5", san: "5...dxe5", chunk: "B", note: "Material restored — geometry conceded." },
+    { m: "f1c4", san: "6.Bc4", chunk: "C", anchor: true, note: "The laser finds f7 — the second barrel of a two-barreled gun." },
+    { m: "g8f6", san: "6...Nf6", chunk: "C", note: "Blocking the f7 threat the natural way —" },
+    { m: "f3b3", san: "7.Qb3!", chunk: "C", anchor: true, note: "One queen shift, two targets: b7 hangs and f7 is attacked twice. This is the Opera Game — Morphy, Paris 1858, the most famous chess ever played — and his opponents were a duke and a count doing exactly what your opponents do.", why: { q: "Why does one queen move win material against ANY defense?", a: "Count the targets: b7 is attacked once and defended zero; f7 is attacked twice and defended once. One move cannot fix two problems two files apart — so he must choose what to lose. Double attack isn't a trick, it's arithmetic; the whole line existed to buy this geometry with tempo." } },
+  ],
+  promise: {
+    eyebrow: "The promise · move 7", headline: "Two targets. One defender.",
+    plyCount: 13, last: ["f3", "b3"], marks: ["b7", "f7"],
+    body: "Before you learn a single move: material is level, nothing is captured — and Black is already losing something. Can you see the two points that cannot both survive?",
+    revealTitle: "7.Qb3!",
+    reveal: "b7: attacked by the queen, defended by nobody. f7: attacked by queen and bishop, defended once. His best try (7...Qe7) saves f7 and surrenders b7 — a clean pawn and the bishop pair in an endgame. This exact position is the Opera Game of 1858; club players walk into it every day, 170 years later.",
+    chip: "The pin 3...Bg4?! is among the most common club replies to 3.d4 — and it has been refuted since 1858.",
+  },
+  danger: {
+    eyebrow: "The edge case · the honest road", headline: "3...exd4 — he opens the game himself.",
+    base: null, baseCount: 5,
+    plies: [
+      { m: "e5d4", san: "3...exd4", note: "The correct reply: trade the tension away before it costs something." },
+      { m: "f3d4", san: "4.Nxd4", note: "A Scotch-like center for free: your knight owns d4 and his d6 pawn now BLOCKS his dark-square bishop instead of guarding anything." },
+      { m: "g8f6", san: "4...Nf6", note: "" },
+      { m: "b1c3", san: "5.Nc3", note: "" },
+      { m: "f8e7", san: "5...Be7", note: "The Philidor bishop, employed as a wall ornament." },
+      { m: "f1e2", san: "6.Be2", note: "" },
+      { m: "e8g8,h8f8", san: "6...O-O", note: "" },
+      { m: "e1g1,h1f1", san: "7.O-O", note: "The honest best-play version: no tricks, no material — just more space, a freer bishop, and a d6 pawn that will need an apology all game. Play c4 ideas, Bf3, watch d5. This is a better version of the open games you already play." },
+    ],
+    ledgerTitle: "How club players meet 3.d4 (≈, at your level)",
+    ledger: [
+      { label: "3...Bg4?! — the pin, refuted since 1858", pct: 30, color: C.gold },
+      { label: "3...exd4 — the honest road", pct: 40, color: C.red },
+      { label: "Other (...Nd7, ...Nf6, ...f6?!)", pct: 30, color: C.muted },
+    ],
+    survivalTitle: "Against the honest road",
+    survival: "3...exd4 4.Nxd4 and play a free-flowing open game: Nc3, Be2, O-O, then c4 or f4 by taste. Against 3...Nd7 (the Hanham), 4.Bc4 keeps maximum pressure — watch for the classic 4...Be7?? 5.dxe5 dxe5 6.Qd5! hitting f7. Against 3...Nf6, 4.dxe5 Nxe4 5.Qd5! wins the pawn back with interest.",
+    bailoutTitle: "The quiet lane",
+    bailoutMoves: ["e2e4","e7e5","g1f3","d7d6","f1c4"],
+    bailoutLast: ["f1", "c4"],
+    bailoutNote: "3.Bc4 — decline the theory discussion, develop, and castle. The break stays in your pocket; d4 works on move 5 as well as move 3.",
+  },
+  drills: [
+    { id: "ph1", kind: "move", plyCount: 4, from: "d2", to: "d4",
+      prompt: "He built the Philidor wall with 2...d6. Answer it.",
+      hints: ["The wall's defender has a job it can't keep.", "Same medicine as the Scotch: the central break."],
+      reason: "3.d4 — hit e5 immediately: every exchange opens lines while his pieces are still parked." },
+    { id: "ph2", kind: "move", plyCount: 6, from: "d4", to: "e5",
+      prompt: "He pinned with 3...Bg4. Call the bluff.",
+      hints: ["The pin only 'works' if the tension stays.", "Take — and make him prove the pin was real."],
+      reason: "4.dxe5! — now 4...dxe5?? 5.Qxd8+ Kxd8 6.Nxe5 wins a pawn, so he must give the bishop for the knight." },
+    { id: "ph3", kind: "move", plyCount: 12, from: "d1", to: "b3",
+      prompt: "His knight blocked f7. Find the move the Opera House applauded.",
+      hints: ["Two undefended points share one diagonal-and-file geometry.", "The queen re-aims; the bishop already aims."],
+      reason: "7.Qb3! — double attack on b7 and f7. Morphy, 1858. He cannot save both." },
+    { id: "ph4", kind: "goal",
+      prompt: "Why is the 'solid' Philidor wall losing a pawn by move 7 here?",
+      options: [
+        "A pawn defending a pawn under central tension is a liability chain — one break plus one pin-call collapses it",
+        "Because 2...d6 loses by force",
+        "White's pieces are simply faster in every opening",
+      ], correct: 0,
+      reason: "The wall wasn't wrong — it was passive. Passive setups lose to well-timed breaks; that lesson transfers to every ...d6 system you'll ever face." },
+    { id: "ph5", kind: "move", danger: true, plyCount: 5, extra: ["e5d4"], from: "f3", to: "d4",
+      prompt: "He took the honest way: 3...exd4. Recapture correctly.",
+      hints: ["Which piece WANTS the d4 square?", "Keep the queen home; the knight centralizes."],
+      reason: "4.Nxd4 — a free Scotch-like center; his d6 pawn now just blocks his own bishop." },
+  ],
+};
+
 const LANGE = {
   id: "lange", family: "italian", chip: "🌀 Max Lange", badge: "🌀 MAX LANGE ATTACK · WHITE",
   conflicts: [
@@ -1676,7 +1763,7 @@ const FAMILIES = [
   { id: "knights", rep: false, label: "🐴 Four Knights", blurb: "⚔ Off-repertoire: 3.Nc3 collides with your 3.d4 — and these two even collide with each other at move 4. Museum pieces with teeth." },
 ];
 
-const PACKS = [MIESES, CLASSICAL, STEINITZ, HOOVER, DECLINES, SCOTCH, GRECO, MOLLER, SPEAR, LANGE, FRIED, LEGAL, MIRROR, HALLO, ALIEN, MORRA, PETROFF, BUSCH];
+const PACKS = [MIESES, CLASSICAL, STEINITZ, HOOVER, DECLINES, SCOTCH, GRECO, MOLLER, SPEAR, LANGE, FRIED, LEGAL, MIRROR, HALLO, ALIEN, MORRA, PETROFF, PHILIDOR, BUSCH];
 
 
 
@@ -1847,8 +1934,8 @@ const EXTRAS = {
         note: "Moves 9 through 40 in one breath: the clamp holds, every trade drifts toward the endgame only White can win, and his 'bishop pair' stares at its own pawns. Nursing an edge looks exactly like this." },
       { t: "He lashes out", moves: [
           { m: "d5b4", san: "9...Nb4?!" },
-          { m: "e2e4", san: "10.Qe4!" } ],
-        note: "The ...Nc2+ fork trick dies to one centralizing move — c2 is covered, a3 comes with tempo, and the knight trudges home. Space means your pieces defend by attacking." },
+          { m: "a2a3", san: "10.a3!" } ],
+        note: "Ask the jump to prove itself: the ...Nc2+ fork never existed, and a3 sends the knight to its only square — d5. Do NOT cash it with cxd5 (the a6 bishop x-rays e2 the moment c4 steps away); play g3 and Bg2 instead, and the knight becomes a target on a highway you own. (Not 10.Qe4? — the natural centralization loses the game to 10...d5!: the queen retreats, the center rolls, and ...Nc2 tricks follow for real.)" },
     ],
   },
   petroff: {
@@ -1865,8 +1952,32 @@ const EXTRAS = {
         note: "Queen for knight, and his consolation is denied too: his king has lost castling and squats on the d-file while you develop with threats. Convert at leisure." },
       { t: "If he ignores the knight", moves: [
           { m: "b7b6", san: "6...b6" },
-          { m: "d8c6", san: "7.Nc6!" } ],
-        note: "The knight strolls out attacking bishop, knight and pawn at once. There was never a cage — every exit is paved with his pieces." },
+          { m: "e2d1", san: "7.Qd1!" } ],
+        note: "The knight needs no rescue — it already banked the queen. Go home, consolidate, and let him spend a tempo on ...Bxd8; you develop into a position the engine calls +5. (Not 7.Nc6? dxc6 — feeding the knight back for free. A piece that has cashed its profit owes you nothing.)" },
+    ],
+  },
+  philidor: {
+    hints: {
+      A: "One break, played instantly. The wall's defender (d6) answers to your d-pawn — open the center before his pieces wake.",
+      B: "A pin is a claim, not a fact. Take on e5 and make him prove it — then recapture with the piece that keeps attacking.",
+      C: "Two weak points, two files apart, one move to hit both. Find the geometry before you look for tactics.",
+    },
+    finalWhy: "b7 is attacked and undefended; f7 is attacked twice and defended once. No single move saves both — the double attack is arithmetic, not magic. This is the Opera Game position of 1858, and club players still walk into it every day.",
+    futures: [
+      { t: "He saves f7", moves: [
+          { m: "d8e7", san: "7...Qe7" },
+          { m: "b3b7", san: "8.Qxb7" },
+          { m: "e7b4", san: "8...Qb4+" },
+          { m: "b7b4", san: "9.Qxb4" },
+          { m: "f8b4", san: "9...Bxb4+" },
+          { m: "c2c3", san: "10.c3" } ],
+        note: "His best defense — and the bill still gets paid: a clean pawn up, the bishop pair, and an endgame where his e5 pawn needs babysitting forever. Morphy preferred 8.Nc3 and a mating attack; the pawn-up endgame is the club-proof cash-out." },
+      { t: "He guards b7 with the queen", moves: [
+          { m: "d8d7", san: "7...Qd7?" },
+          { m: "b3b7", san: "8.Qxb7!" },
+          { m: "d7c6", san: "8...Qc6" },
+          { m: "c4b5", san: "9.Bb5!" } ],
+        note: "The defense defends nothing: Qxb7 takes anyway, and when his queen offers the trade to save the a8 rook, Bb5! pins her to the king. Whatever he plays, queen or rook comes off the board. Geometry compounds: the same diagonal that hit f7 now delivers the pin." },
     ],
   },
   lange: {
@@ -2012,9 +2123,9 @@ const EXTRAS = {
 };
 /* ============ THE REPERTOIRE TREE — every Scotch line merged, keyed by position ============ */
 const posKey = (b, turn) => b.map((x) => x || ".").join("") + turn;
-const REP = (() => {
+const buildRep = (packIds) => {
   const lines = [];
-  for (const p of PACKS.filter((x) => x.family === "scotch")) {
+  for (const p of PACKS.filter((x) => packIds.includes(x.id))) {
     lines.push({ packId: p.id, kind: "dream", plies: p.dream.map((d) => ({ m: d.m, san: d.san })) });
     for (const f of ((EXTRAS[p.id] && EXTRAS[p.id].futures) || [])) {
       lines.push({ packId: p.id, kind: "future", t: f.t, note: f.note,
@@ -2046,10 +2157,10 @@ const REP = (() => {
     }
   }
   return { user, opp, term, zones, totalUser: Object.keys(user).length, lineCount: lines.length };
-})();
+};
 
 /* enumerate every distinct run through the tree; weight branches by runs beneath them */
-const REPX = (() => {
+const buildRepx = (rep) => {
   const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
   const weight = {}; const memo = {};
   const count = (b, k) => {
@@ -2057,10 +2168,10 @@ const REPX = (() => {
     if (memo[kk] != null) return memo[kk];
     let total = 1;
     if (k % 2 === 0) {
-      const u = REP.user[kk];
+      const u = rep.user[kk];
       total = u ? count(applyTok(b, u.m), k + 1) : 1;
     } else {
-      const entry = REP.opp[kk] || [];
+      const entry = rep.opp[kk] || [];
       if (entry.length) {
         weight[kk] = weight[kk] || {};
         total = 0;
@@ -2074,25 +2185,25 @@ const REPX = (() => {
   const dfs = (b, k, sans, ukeys, toks) => {
     const kk = posKey(b, k % 2);
     if (k % 2 === 0) {
-      const u = REP.user[kk];
-      if (!u) { const t = REP.term[kk] || {}; paths.push({ sans, userKeys: ukeys, toks, packId: t.packId, kind: t.kind, t: t.t, note: t.note }); return; }
+      const u = rep.user[kk];
+      if (!u) { const t = rep.term[kk] || {}; paths.push({ sans, userKeys: ukeys, toks, packId: t.packId, kind: t.kind, t: t.t, note: t.note }); return; }
       dfs(applyTok(b, u.m), k + 1, [...sans, u.san], [...ukeys, kk], [...toks, u.m]);
     } else {
-      const entry = REP.opp[kk] || [];
-      if (!entry.length) { const t = REP.term[kk] || {}; paths.push({ sans, userKeys: ukeys, toks, packId: t.packId, kind: t.kind, t: t.t, note: t.note }); return; }
+      const entry = rep.opp[kk] || [];
+      if (!entry.length) { const t = rep.term[kk] || {}; paths.push({ sans, userKeys: ukeys, toks, packId: t.packId, kind: t.kind, t: t.t, note: t.note }); return; }
       for (const e of entry) dfs(applyTok(b, e.m), k + 1, [...sans, e.san], ukeys, [...toks, e.m]);
     }
   };
   dfs(START.slice(), 0, [], [], []);
   return { weight, paths };
-})();
+};
 
 /* ============ THE RUNS — every path gets a code, a name, a record ============ */
-const RUNS = (() => {
-  const fam = PACKS.filter((p) => p.family === "scotch").map((p) => p.id);
+const buildRuns = (packIds, repx) => {
+  const fam = PACKS.filter((p) => packIds.includes(p.id)).map((p) => p.id);
   const kindRank = { dream: 0, future: 1, edge: 2 };
   const hash = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); };
-  const list = REPX.paths.map((pt, i) => ({ ...pt, _i: i }));
+  const list = repx.paths.map((pt, i) => ({ ...pt, _i: i }));
   list.sort((a, b) => {
     const fa = fam.indexOf(a.packId), fb = fam.indexOf(b.packId);
     if (fa !== fb) return fa - fb;
@@ -2125,7 +2236,18 @@ const RUNS = (() => {
     const mv = r.sans[z] || "";
     return mv ? { ...r, label: r.label + " · via " + mv } : r;
   });
-})();
+};
+
+/* the gauntlet tree is built from the core repertoire plus any learned packs */
+const buildTree = (packIds) => {
+  const rep = buildRep(packIds);
+  const repx = buildRepx(rep);
+  return { REP: rep, REPX: repx, RUNS: buildRuns(packIds, repx), packIds };
+};
+const CORE_PACK_IDS = PACKS.filter((p) => p.family === "scotch").map((p) => p.id);
+const LEARNABLE_PACK_IDS = ["petroff", "philidor"]; // shield packs that can join the gauntlet once learned
+const DEFAULT_TREE = buildTree(CORE_PACK_IDS);
+const REP = DEFAULT_TREE.REP, REPX = DEFAULT_TREE.REPX, RUNS = DEFAULT_TREE.RUNS;
 
 const dayStr = (d) => {
   const x = d || new Date();
@@ -2365,7 +2487,13 @@ function engineCore() {
     if(whitePOV<-31000) return {mate: -Math.ceil((32000+whitePOV)/2), d:lastD};
     return {cp: whitePOV, d: lastD};
   }
-  return { parseFen: parseFen, perft: perft, go: go, evalPos: evalPos };
+  // targets of currently-legal capture moves (test/audit hook — not used in play)
+  function legalCaptureTargets(){
+    var mv=genMoves(true), out=[];
+    for(var i=0;i<mv.length;i++){ if(make(mv[i])){ unmake(); out.push((mv[i]>>6)&63); } }
+    return out;
+  }
+  return { parseFen: parseFen, perft: perft, go: go, evalPos: evalPos, legalCaptureTargets: legalCaptureTargets };
 }
 
 const LOCAL_WORKER_MAIN = 'var FEN="";self.onmessage=function(e){var m=e.data;if(m==="uci"){self.postMessage("uciok");}else if(m.indexOf("position fen ")===0){FEN=m.slice(13);}else if(m.indexOf("go")===0){var ms=1150;var mm=m.match(/movetime (\\d+)/);if(mm)ms=parseInt(mm[1],10);var r=core.go(FEN,ms);var side=FEN.split(/\\s+/)[1];var v;var kind;if(r.mate!=null){kind="mate";v=side==="w"?r.mate:-r.mate;}else{kind="cp";v=side==="w"?r.cp:-r.cp;}self.postMessage("info depth "+r.d+" score "+kind+" "+v);self.postMessage("bestmove 0000");}};';
@@ -2571,25 +2699,23 @@ function Board({ pieces, last, marks = [], sel, frame, onTap, flip = false, size
               className="flex items-center justify-center select-none"
               style={{
                 aspectRatio: "1 / 1", position: "relative",
-                background: isSel ? C.gold : isMark ? C.gold + "CC" : isLast ? (dark ? "#8A7A3A" : "#CFC06E") : dark ? C.boardDark : C.boardLight,
+                background: isSel ? (dark ? "#BBCB2B" : "#F5F682") : isMark ? (dark ? "#D36C50" : "#EB7D6A") : isLast ? (dark ? "#B9CA43" : "#F5F682") : dark ? C.boardDark : C.boardLight,
                 cursor: onTap ? "pointer" : "default",
-                fontSize: "min(8vw, 34px)", lineHeight: 1,
               }}>
               {i % 8 === 0 && (
-                <span style={{ position: "absolute", top: 1, left: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "rgba(250,246,234,0.55)" : "rgba(36,27,18,0.5)", pointerEvents: "none" }}>
+                <span style={{ position: "absolute", top: 1, left: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "#EBECD0" : "#779556", pointerEvents: "none" }}>
                   {rank + 1}
                 </span>
               )}
               {Math.floor(i / 8) === 7 && (
-                <span style={{ position: "absolute", bottom: 1, right: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "rgba(250,246,234,0.55)" : "rgba(36,27,18,0.5)", pointerEvents: "none" }}>
+                <span style={{ position: "absolute", bottom: 1, right: 3, fontSize: 9, lineHeight: 1, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: dark ? "#EBECD0" : "#779556", pointerEvents: "none" }}>
                   {"abcdefgh"[file]}
                 </span>
               )}
               {p && (
-                <span style={{
-                  color: p === p.toUpperCase() ? "#FAF6EA" : "#241B12",
-                  textShadow: p === p.toUpperCase() ? "0 1px 2px rgba(0,0,0,0.65)" : "0 1px 1px rgba(255,255,255,0.12)",
-                }}>{GLYPH[p.toLowerCase()]}</span>
+                <img src={`/pieces/${p.toLowerCase()}${p === p.toUpperCase() ? "l" : "d"}.svg`} alt={p}
+                  draggable={false}
+                  style={{ width: "94%", height: "94%", pointerEvents: "none", userSelect: "none" }} />
               )}
             </div>
           );
@@ -3087,7 +3213,11 @@ function EdgeCases({ pack, go, switchPack }) {
 /* ============ THE DAILY GAUNTLET — the whole Scotch, shuffled ============ */
 const GKEY = "lines-gauntlet-v1";
 const GKEY2 = "lines-gauntlet-v2";
-const APP_VER = "v6.2·git";
+const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
+const TREEKEY = "lines-tree-v1";   // learned packs added to the gauntlet tree
+const CCUSER = "lines-cc-user";    // chess.com username
+const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
+const APP_VER = "v6.3·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -3098,7 +3228,7 @@ const SAVER = (() => {
     status = "saving"; notify();
     try {
       if (!STORE) throw new Error("no storage");
-      await STORE.set(GKEY2, JSON.stringify(pl));
+      await STORE.set(GKEY3, JSON.stringify(pl));
       status = "ok"; lastAt = Date.now();
     } catch (e) { status = "fail"; }
     notify();
@@ -3137,7 +3267,7 @@ const dayInfo = (days, ds) => {
   for (const sg of ks) { u += pl[sg].u || 0; m += pl[sg].m || 0; if (pl[sg].fx) fx++; }
   return { runs: ks.length, u, m, fx, acc: u ? Math.round((100 * Math.max(0, u - m)) / u) : 0 };
 };
-function CalCard({ days }) {
+function CalCard({ days, runsN }) {
   const [off, setOff] = useState(0);
   const [selDay, setSelDay] = useState(dayStr());
   const now = new Date();
@@ -3151,7 +3281,7 @@ function CalCard({ days }) {
   const perfectDay = (ds) => {
     const pl = ((days[ds] || {}).plays) || {};
     const ks = Object.keys(pl);
-    return ks.length >= RUNS.length && ks.every((sg) => pl[sg].m === 0);
+    return ks.length >= runsN && ks.every((sg) => pl[sg].m === 0);
   };
   const streak = (() => {
     let n = 0; const d = new Date();
@@ -3187,7 +3317,7 @@ function CalCard({ days }) {
           if (!dd) return <div key={ci} />;
           const ds = dayStr(new Date(y, m, dd));
           const pN = played(ds);
-          const full = pN >= RUNS.length;
+          const full = pN >= runsN;
           const perf = full && perfectDay(ds);
           const isToday = ds === todayS;
           const isSel = ds === selDay;
@@ -3216,7 +3346,7 @@ function CalCard({ days }) {
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: inf ? C.cream : C.muted, minHeight: 15 }}>
             <span style={{ color: C.gold }}>{lbl}</span>
             {inf
-              ? ` · ${inf.runs}/${RUNS.length} runs · ${inf.acc}% first-try · ${inf.m} miss${inf.m === 1 ? "" : "es"}${inf.fx ? ` · ${inf.fx} fixed` : ""}`
+              ? ` · ${inf.runs}/${runsN} runs · ${inf.acc}% first-try · ${inf.m} miss${inf.m === 1 ? "" : "es"}${inf.fx ? ` · ${inf.fx} fixed` : ""}`
               : " · no runs"}
           </div>
         );
@@ -3254,48 +3384,39 @@ function Gauntlet({ onExit }) {
   const [impTxt, setImpTxt] = useState("");
   const [, bumpSave] = useState(0);
   useEffect(() => SAVER.subscribe(() => bumpSave((x) => x + 1)), []);
+  const [learnedPacks, setLearnedPacks] = useState([]);
+  const T = useMemo(() => (learnedPacks.length ? buildTree([...CORE_PACK_IDS, ...learnedPacks]) : DEFAULT_TREE), [learnedPacks]);
+  const togglePack = (id) => setLearnedPacks((L) => {
+    const nl = L.includes(id) ? L.filter((x) => x !== id) : [...L, id];
+    try { if (STORE) STORE.set(TREEKEY, JSON.stringify(nl)); } catch (e) {}
+    return nl;
+  });
+  const shownRef = useRef(Date.now());
 
   // persistence (v2 schema; migrates v1 lifetime stats on first load)
   useEffect(() => {
     (async () => {
       let got = false;
       try {
-        const r2 = STORE && (await STORE.get(GKEY2));
-        if (r2 && r2.value) {
-          const d = JSON.parse(r2.value);
+        const rt = STORE && (await STORE.get(TREEKEY));
+        if (rt && rt.value) setLearnedPacks(JSON.parse(rt.value).filter((id) => LEARNABLE_PACK_IDS.includes(id)));
+      } catch (e) {}
+      try {
+        const r3 = STORE && (await STORE.get(GKEY3));
+        if (r3 && r3.value) {
+          const d = JSON.parse(r3.value);
           const dd = d.days || {};
           const t0 = dayStr();
           Object.keys(dd).forEach((ds) => { if (ds !== t0 && dd[ds]) { delete dd[ds].hand; delete dd[ds].missed; } });
           setDays(dd); setHit(d.hit || {}); setMissedPos(d.missedPos || {});
           setLifeRuns(d.lifeRuns || 0); setLifeClean(d.lifeClean || 0);
-          if (d.conf) { setConf(d.confV === 2 ? d.conf : recalConf(d.conf)); }
-          else {
-            const seed = {};
-            Object.keys(d.hit || {}).forEach((k2) => { seed[k2] = { c: 0.55, cracks: 0, seen: 1, miss: 0 }; });
-            Object.keys(d.missedPos || {}).forEach((k2) => { seed[k2] = { c: 0.2, cracks: 0, seen: 1, miss: d.missedPos[k2] || 1 }; });
-            setConf(seed);
-          }
+          setConf(d.mem || {});
           got = true;
         }
       } catch (e) {}
-      if (got) setLoadInfo("restored");
-      else {
-        let mig = false;
-        try {
-          const r1 = STORE && (await STORE.get(GKEY));
-          if (r1 && r1.value) {
-            const d = JSON.parse(r1.value);
-            setHit(d.hit || {}); setMissedPos(d.missedPos || {});
-            setLifeRuns(d.runs || 0); setLifeClean(d.clean || 0);
-            const seed = {};
-            Object.keys(d.hit || {}).forEach((k2) => { seed[k2] = { c: 0.55, cracks: 0, seen: 1, miss: 0 }; });
-            Object.keys(d.missedPos || {}).forEach((k2) => { seed[k2] = { c: 0.2, cracks: 0, seen: 1, miss: d.missedPos[k2] || 1 }; });
-            setConf(seed);
-            mig = true;
-          }
-        } catch (e) {}
-        setLoadInfo(mig ? "migrated v1" : "fresh start");
-      }
+      // v6.3 is a deliberate fresh start: v1/v2 saved state is not auto-loaded.
+      // Old exports still restore (best-effort seed) through the Restore box.
+      setLoadInfo(got ? "restored" : "fresh start (v6.3)");
       setLoaded(true);
     })();
   }, []);
@@ -3303,32 +3424,33 @@ function Gauntlet({ onExit }) {
   // a save per board move floods it and later writes fail silently — the original zeroing bug)
   useEffect(() => {
     if (!loaded) return;
-    SAVER.push({ days, hit, missedPos, lifeRuns, lifeClean, conf, confV: 2 }, mode === "run" ? 6000 : 0);
+    SAVER.push({ days, hit, missedPos, lifeRuns, lifeClean, mem: conf, memV: 3 }, mode === "run" ? 6000 : 0);
   }, [loaded, days, hit, missedPos, lifeRuns, lifeClean, conf, mode]);
 
   const today = dayStr();
   const todays = days[today] || { plays: {} };
-  const order = useMemo(() => daySeedOrder(today, RUNS.length), [today]);
-  const session = useMemo(() => order.map((ix) => RUNS[ix]), [order]);
+  const order = useMemo(() => daySeedOrder(today, T.RUNS.length), [today]);
+  const session = useMemo(() => order.map((ix) => T.RUNS[ix]), [order]);
   const playedN = Object.keys(todays.plays).length;
   const cleanN = session.filter((r) => todays.plays[r.sig] && todays.plays[r.sig].m === 0).length;
   const stumbles = session.filter((r) => { const pl = todays.plays[r.sig]; return pl && pl.m > 0 && !pl.fx; });
   const nextUp = session.find((r) => !todays.plays[r.sig]) || stumbles[0] || null;
-  const redoPhase = playedN >= RUNS.length && stumbles.length > 0;
+  const redoPhase = playedN >= T.RUNS.length && stumbles.length > 0;
 
-  const cur = curSig ? RUNS.find((r) => r.sig === curSig) : null;
+  const cur = curSig ? T.RUNS.find((r) => r.sig === curSig) : null;
   const pieces = useMemo(() => applyMoves(hist), [hist]);
   const k = hist.length;
   const key = posKey(pieces, k % 2);
   const lastTok = hist.length ? hist[hist.length - 1] : null;
 
   const startRun = (sg) => {
-    const run = RUNS.find((r) => r.sig === sg);
-    const hand = (days[today] && days[today].hand) || {};
+    const run = T.RUNS.find((r) => r.sig === sg);
     const lastJ = run.userKeys.length - 1;
-    // fast-forward only if: proven, already hand-played today, and not the payoff move
+    const now = Date.now();
+    // v6.3: performance-gated — fast-forward whatever the model predicts you still
+    // own (R >= 0.8 and not in relearn). No calendar gate; the payoff move is always yours.
     const plan = run.userKeys.map((k2, j2) =>
-      j2 !== lastJ && confOf(conf, k2) >= CONF.PROVEN && hand[k2] ? "ff" : "hand");
+      j2 !== lastJ && owned(conf[k2], now) ? "ff" : "hand");
     setFfPlan(plan);
     setCurSig(sg); setHist([]); setSel(null); setMiss(0); setMsg(null);
     setSans([]); setRunMisses(0); setRunCracks(0); setMode("run");
@@ -3337,19 +3459,10 @@ function Gauntlet({ onExit }) {
   // door: the opponent move that delivered us here — logged on every hand encounter, so
   // door-conditional weakness ("misses this only via 4...Qf6") is detectable from data
   // without ever scoring paths.
-  const bumpConf = (k2, clean, gain, door) => {
-    setConf((C0) => {
-      const r = C0[k2] || { c: 0, cracks: 0, seen: 0, miss: 0 };
-      const cracked = !clean && r.c >= CONF.PROVEN;
-      const c2 = !clean
-        ? (cracked ? CONF.CRACK_FLOOR : r.c * CONF.CRASH_LEARN)
-        : gain
-          ? r.c + CONF.GAIN_DAY * (1 - r.c)
-          : r.c < CONF.REP_CEIL ? Math.min(CONF.REP_CEIL, r.c + CONF.GAIN_REP * (1 - r.c)) : r.c;
-      const via = { ...(r.via || {}) };
-      if (door) { const e = via[door] || [0, 0]; via[door] = [e[0] + 1, e[1] + (clean ? 0 : 1)]; }
-      return { ...C0, [k2]: { c: c2, cracks: (r.cracks || 0) + (cracked ? 1 : 0), seen: (r.seen || 0) + 1, miss: (r.miss || 0) + (clean ? 0 : 1), via } };
-    });
+  // v6.3 fold: stability gain indexed on the model's own prediction at test time.
+  // door: the opponent move that delivered us here — logged on every hand encounter.
+  const bumpConf = (k2, clean, door, latMs) => {
+    setConf((C0) => ({ ...C0, [k2]: foldResult(C0[k2], clean, Date.now(), door, latMs).rec }));
   };
   const markHand = (k2) => setDays((D) => {
     const day = { ...(D[today] || { plays: {} }) };
@@ -3408,6 +3521,7 @@ function Gauntlet({ onExit }) {
     }
   }, [mode, k]);
 
+  useEffect(() => { shownRef.current = Date.now(); }, [key]);
   const expected = cur && mode === "run" && k % 2 === 0 && k < cur.toks.length && ffPlan[k / 2] !== "ff"
     ? { m: cur.toks[k], san: cur.sans[k] || "" } : null;
   const expFT = expected ? fromTo(expected.m) : null;
@@ -3418,10 +3532,8 @@ function Gauntlet({ onExit }) {
     if (!sel) { if (pc && pc === pc.toUpperCase()) setSel(name); return; }
     if (sel === name) { setSel(null); return; }
     if (sel + name === expFT[0] + expFT[1]) {
-      const firstToday = !(((days[today] || {}).hand) || {})[key];
-      const missedToday = !!(((days[today] || {}).missed) || {})[key];
       const door = k === 0 ? "start" : (sans[k - 1] || "?");
-      if (miss === 0) { setHit((h) => ({ ...h, [key]: true })); if (!missedToday) bumpConf(key, true, firstToday, door); }
+      if (miss === 0) { setHit((h) => ({ ...h, [key]: true })); bumpConf(key, true, door, Date.now() - shownRef.current); }
       markHand(key);
       setHist((h) => [...h, expected.m]); setSans((x) => [...x, expected.san]);
       setSel(null); setMiss(0); setMsg(null);
@@ -3429,13 +3541,13 @@ function Gauntlet({ onExit }) {
       const nm = miss + 1;
       setSel(null);
       if (nm === 1) {
-        const wasProven = confOf(conf, key) >= CONF.PROVEN;
+        const wasOwned = owned(conf[key], Date.now());
         setMiss(1); setRunMisses((r) => r + 1);
         setMissedPos((mp) => ({ ...mp, [key]: (mp[key] || 0) + 1 }));
-        bumpConf(key, false, true, k === 0 ? "start" : (sans[k - 1] || "?")); markMiss(key);
-        if (wasProven) { setRunCracks((c2) => c2 + 1); markCrack(key); }
-        setMsg(wasProven
-          ? "⛑ A PROVEN position cracked — that is the serious flag. The mover is marked; fix it by hand, and the position drops back to relearning."
+        bumpConf(key, false, k === 0 ? "start" : (sans[k - 1] || "?")); markMiss(key);
+        if (wasOwned) { setRunCracks((c2) => c2 + 1); markCrack(key); }
+        setMsg(wasOwned
+          ? "⛑ OWNED ground cracked — that is the serious flag. The mover is marked; fix it by hand, and the position must be re-proven from memory."
           : "Not that one — logged as a miss. The mover is marked; now fix it yourself.");
       } else {
         setMiss(0); markHand(key);
@@ -3456,17 +3568,21 @@ function Gauntlet({ onExit }) {
   // built for hypothesis-hunting rather than debugging.
   const buildExport = () => {
     const positions = {};
-    for (const r of RUNS) r.userKeys.forEach((k2, j2) => {
-      if (!positions[k2]) positions[k2] = { at: r.id + "@" + (j2 + 1), move: (REP.user[k2] || {}).san || "?", runs: [] };
+    for (const r of T.RUNS) r.userKeys.forEach((k2, j2) => {
+      if (!positions[k2]) positions[k2] = { at: r.id + "@" + (j2 + 1), move: (T.REP.user[k2] || {}).san || "?", runs: [] };
       if (positions[k2].runs.indexOf(r.id) < 0) positions[k2].runs.push(r.id);
     });
     const runsDict = {};
-    RUNS.forEach((r) => { runsDict[r.sig] = { id: r.id, label: r.label, pack: r.packId, kind: r.kind, moves: r.sans.filter(Boolean).join(" ") }; });
+    T.RUNS.forEach((r) => { runsDict[r.sig] = { id: r.id, label: r.label, pack: r.packId, kind: r.kind, moves: r.sans.filter(Boolean).join(" ") }; });
     const mastery = {};
+    const nowX = Date.now();
     Object.keys(conf).forEach((k2) => {
       const at = (positions[k2] || { at: "off-tree" }).at;
       const r = conf[k2];
-      mastery[at] = { c: Math.round(r.c * 100) / 100, seen: r.seen || 0, miss: r.miss || 0, cracks: r.cracks || 0, via: r.via || {}, move: (positions[k2] || {}).move, sharedBy: (positions[k2] || { runs: [] }).runs.length };
+      mastery[at] = { H: Math.round((r.H || 0) * 100) / 100, last: r.last ? new Date(r.last).toISOString() : null,
+        R: Math.round(retrievability(r, nowX) * 100) / 100, relearn: !!r.relearn,
+        seen: r.seen || 0, miss: r.miss || 0, cracks: r.cracks || 0, via: r.via || {}, ev: r.ev || [],
+        move: (positions[k2] || {}).move, sharedBy: (positions[k2] || { runs: [] }).runs.length };
     });
     const daysX = {};
     Object.keys(days).forEach((ds) => {
@@ -3478,8 +3594,8 @@ function Gauntlet({ onExit }) {
       if (inf) daysX[ds].summary = inf;
     });
     return {
-      _schema: "mastery[pos].c: confidence 0-1 (proven>=0.8; +0.4*(1-c) on first clean hand-play per day; *0.25 on miss). via[door]=[handEncounters,misses] keyed by the opponent move that led in. days[date].plays[run]={m:misses,u:handMoves,ff:fastForwarded,fx:fixedOnRedo}. Positions labeled runId@userPlyIndex.",
-      meta: { app: APP_VER, exported: new Date().toISOString(), runs: RUNS.length, positions: REP.totalUser, lifetime: { runs: lifeRuns, clean: lifeClean } },
+      _schema: "v6.3 memory model. mastery[pos]: H=stability half-life (days); last=last hand-test; R=predicted retrievability at export, R=2^(-days/H) (owned>=0.8 fast-forwards; a miss opens relearn until one clean hand-play). On success H*=1+2.2*(1-R) — gain indexed on the model's own prediction. ev=[minuteEpoch,clean,door,latencyMs] event log (newest last, capped). via[door]=[handEncounters,misses] keyed by the opponent move that led in. days[date].plays[run]={m:misses,u:handMoves,ff:fastForwarded,fx:fixedOnRedo}. Positions labeled runId@userPlyIndex.",
+      meta: { app: APP_VER, exported: new Date().toISOString(), runs: T.RUNS.length, positions: T.REP.totalUser, lifetime: { runs: lifeRuns, clean: lifeClean } },
       runs: runsDict,
       mastery,
       days: daysX,
@@ -3489,7 +3605,7 @@ function Gauntlet({ onExit }) {
     try {
       const d = JSON.parse(txt);
       const at2key = {}, id2sig = {};
-      for (const r of RUNS) {
+      for (const r of T.RUNS) {
         id2sig[r.id] = r.sig;
         r.userKeys.forEach((k2, j2) => { const at = r.id + "@" + (j2 + 1); if (!at2key[at]) at2key[at] = k2; });
       }
@@ -3498,7 +3614,9 @@ function Gauntlet({ onExit }) {
         Object.keys(d.mastery).forEach((at) => {
           const k2 = at2key[at]; if (!k2) return;
           const m = d.mastery[at];
-          nc[k2] = { c: m.c || 0, seen: m.seen || 0, miss: m.miss || 0, cracks: m.cracks || 0, via: m.via || {} };
+          nc[k2] = m.H != null
+            ? { H: m.H || 0, last: m.last ? Date.parse(m.last) : 0, relearn: !!m.relearn, seen: m.seen || 0, miss: m.miss || 0, cracks: m.cracks || 0, via: m.via || {}, ev: m.ev || [] }
+            : seedFromConf(m.c || 0, m.seen, m.miss, m.cracks, m.via, Date.now()); // v6.2 export: best-effort seed
         });
         const nd = {};
         Object.keys(d.days || {}).forEach((ds) => {
@@ -3543,17 +3661,17 @@ function Gauntlet({ onExit }) {
         Same tree. Fresh order. Every day.
       </h2>
       <p style={{ fontSize: 14.5, lineHeight: 1.6, color: C.cream, margin: 0 }}>
-        All {RUNS.length} runs in today’s order. Lines you’ve proven across days fast-forward after their first hand-play of the day — you drill the frontier, not the ground you own. A payoff move is always yours. Misses wait at the end; a crack in proven ground is the flag that matters.
+        All {T.RUNS.length} runs in today’s order. Whatever the model predicts you still remember fast-forwards — knowledge is acknowledged at the speed it’s demonstrated, and only time decays it. A payoff move is always yours. Misses wait at the end; a crack in owned ground is the flag that matters.
       </p>
-      <CalCard days={days} />
+      <CalCard days={days} runsN={T.RUNS.length} />
       {(() => {
         const ti = dayInfo(days, today);
         return (
           <div className="flex gap-2 flex-wrap">
-            <Stat label="TODAY" val={`${playedN}/${RUNS.length}`} />
+            <Stat label="TODAY" val={`${playedN}/${T.RUNS.length}`} />
             <Stat label="FIRST-TRY" val={ti ? `${ti.acc}%` : "—"} />
             <Stat label="MISSES" val={ti ? ti.m : "—"} />
-            <Stat label="PROVEN" val={`${Object.keys(conf).filter((k2) => conf[k2].c >= CONF.PROVEN).length}/${REP.totalUser}`} />
+            <Stat label="OWNED" val={`${Object.keys(conf).filter((k2) => owned(conf[k2], Date.now())).length}/${T.REP.totalUser}`} />
           </div>
         );
       })()}
@@ -3561,15 +3679,15 @@ function Gauntlet({ onExit }) {
         <Btn full onClick={() => startRun(nextUp.sig)}>
           {redoPhase ? `↺ Redo ${nextUp.id} — hunt the miss →` : `Play ${nextUp.id} →`}
         </Btn>
-      ) : playedN >= RUNS.length ? (
+      ) : playedN >= T.RUNS.length ? (
         <div className="rounded-md p-4 text-center" style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, fontFamily: "'Fraunces', serif", fontSize: 18, color: C.gold }}>
-          {"✦"} Day complete {cleanN >= RUNS.length ? "— immaculate." : "— every stumble avenged."}
+          {"✦"} Day complete {cleanN >= T.RUNS.length ? "— immaculate." : "— every stumble avenged."}
         </div>
       ) : null}
       {(todays.cracks || []).length > 0 && (
         <div className="rounded-md p-3" style={{ background: "#2A1215", border: `1px solid ${C.red}88` }}>
           <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: C.red }}>
-            ⛑ {(todays.cracks || []).length} proven position{(todays.cracks || []).length > 1 ? "s" : ""} cracked today — flagged runs below deserve a redo.
+            ⛑ {(todays.cracks || []).length} owned position{(todays.cracks || []).length > 1 ? "s" : ""} cracked today — flagged runs below deserve a redo.
           </span>
         </div>
       )}
@@ -3596,17 +3714,36 @@ function Gauntlet({ onExit }) {
           );
         })}
       </div>
+      <div className="rounded-md p-3 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.1em", color: C.muted }}>YOUR TREE · {T.RUNS.length} runs · {T.REP.totalUser} positions</div>
+        {LEARNABLE_PACK_IDS.map((id) => {
+          const pk = PACKS.find((p) => p.id === id) || {};
+          const on = learnedPacks.includes(id);
+          return (
+            <button key={id} onClick={() => togglePack(id)} className="flex items-center justify-between rounded-md px-3 py-2 w-full"
+              style={{ background: on ? C.goldSoft : "transparent", border: `1px solid ${on ? C.gold + "66" : C.line}`, color: on ? C.gold : C.muted, fontSize: 12.5, cursor: "pointer" }}>
+              <span>{pk.chip}</span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10 }}>{on ? "IN THE GAUNTLET ✓" : "＋ add to gauntlet"}</span>
+            </button>
+          );
+        })}
+        <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8, lineHeight: 1.5 }}>
+          Learn a pack in its own room first, then add it here — its runs join the daily gauntlet and its positions start cold. The Scotch core is always in.
+        </div>
+      </div>
       {(() => {
-        const pv = Object.keys(conf).filter((k2) => conf[k2].c >= CONF.PROVEN).length;
-        const lr = Object.keys(conf).filter((k2) => conf[k2].c >= 0.35 && conf[k2].c < CONF.PROVEN).length;
+        const nowB = Date.now();
+        const ks = Object.keys(conf);
+        const pv = ks.filter((k2) => owned(conf[k2], nowB)).length;
+        const lr = ks.length - pv;
         return (
           <div className="flex flex-col gap-1">
             <div className="rounded-md flex" style={{ background: C.card, height: 8, overflow: "hidden" }}>
-              <div style={{ width: `${REP.totalUser ? (100 * pv) / REP.totalUser : 0}%`, background: C.gold, transition: "width .4s" }} />
-              <div style={{ width: `${REP.totalUser ? (100 * lr) / REP.totalUser : 0}%`, background: C.gold, opacity: 0.35, transition: "width .4s" }} />
+              <div style={{ width: `${T.REP.totalUser ? (100 * pv) / T.REP.totalUser : 0}%`, background: C.gold, transition: "width .4s" }} />
+              <div style={{ width: `${T.REP.totalUser ? (100 * lr) / T.REP.totalUser : 0}%`, background: C.gold, opacity: 0.35, transition: "width .4s" }} />
             </div>
             <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, color: C.muted, opacity: 0.8 }}>
-              mastery · ✦ proven {pv} · ◐ learning {lr} · ○ new {Math.max(0, REP.totalUser - pv - lr)} — proven lines fast-forward after their first hand-play of the day
+              memory · ✦ owned {pv} · ◐ fading or learning {lr} · ○ untested {Math.max(0, T.REP.totalUser - ks.length)} — owned positions fast-forward until decay reclaims them
             </div>
           </div>
         );
@@ -3645,7 +3782,7 @@ function Gauntlet({ onExit }) {
       )}
       <Btn full tone="ghost" onClick={async () => {
         setDays({}); setMissedPos({}); setHit({}); setLifeRuns(0); setLifeClean(0); setConf({});
-        try { if (STORE) { await STORE.delete(GKEY2); await STORE.delete(GKEY); } } catch (e) {}
+        try { if (STORE) { await STORE.delete(GKEY3); await STORE.delete(GKEY2); await STORE.delete(GKEY); } } catch (e) {}
       }}>Reset saved progress</Btn>
       <Btn full tone="ghost" onClick={() => { SAVER.flush(); onExit(); }}>{"←"} Back to the packs</Btn>
     </div>
@@ -3716,7 +3853,7 @@ function Gauntlet({ onExit }) {
         </span>
       </div>
       {(() => {
-        const ids = REP.zones[key] || [];
+        const ids = T.REP.zones[key] || [];
         const chips = ids.map((id) => ((PACKS.find((q) => q.id === id) || {}).chip)).filter(Boolean);
         return (
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: "0.05em", color: C.muted, minHeight: 16, lineHeight: "16px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -3729,12 +3866,12 @@ function Gauntlet({ onExit }) {
         <div className="flex items-center justify-between" style={{ minHeight: 14 }}>
           <div className="flex gap-1 items-center">
             {cur.userKeys.map((k2, j2) => {
-              const c2 = confOf(conf, k2);
+              const r2 = retrievability(conf[k2], Date.now());
               const here = k % 2 === 0 && j2 === k / 2;
               return (
                 <span key={j2} style={{
                   width: 7, height: 7, borderRadius: 4,
-                  background: c2 >= CONF.PROVEN ? C.gold : c2 >= 0.35 ? C.gold + "66" : "#3A2E24",
+                  background: owned(conf[k2], Date.now()) ? C.gold : r2 > 0 ? C.gold + "66" : "#3A2E24",
                   boxShadow: here ? `0 0 0 1.5px ${C.cream}` : "none",
                   opacity: ffPlan[j2] === "ff" ? 0.45 : 1,
                 }} />
@@ -3743,7 +3880,7 @@ function Gauntlet({ onExit }) {
           </div>
           {k % 2 === 0 && k < cur.toks.length && (
             <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: C.muted }}>
-              {(() => { const c2 = confOf(conf, key); return `pos ${c2 >= CONF.PROVEN ? "✦" : c2 >= 0.35 ? "◐" : "○"} ${c2.toFixed(2)}`; })()}
+              {(() => { const r2 = retrievability(conf[key], Date.now()); return `R ${owned(conf[key], Date.now()) ? "✦" : r2 > 0 ? "◐" : "○"} ${r2.toFixed(2)}`; })()}
             </span>
           )}
         </div>
@@ -3756,7 +3893,7 @@ function Gauntlet({ onExit }) {
         <Btn tone="ghost" onClick={() => setMode("home")}>{"☰"} Session</Btn>
         <div className="flex-1">
           <div className="rounded-md px-3 py-2.5 text-center" style={{ background: C.card, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: k % 2 === 0 ? C.gold : C.muted }}>
-            {k % 2 === 0 ? (ffPlan[k / 2] === "ff" ? "⏩ proven — replaying" : "your move — from memory") : "he is thinking…"}
+            {k % 2 === 0 ? (ffPlan[k / 2] === "ff" ? "⏩ owned — replaying" : "your move — from memory") : "he is thinking…"}
           </div>
         </div>
       </div>
@@ -3768,6 +3905,177 @@ function Gauntlet({ onExit }) {
           {msg}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ============ MY GAMES — coverage, leaks, and what to learn, from real chess.com games ============ */
+function GamesPanel({ onExit }) {
+  const [user, setUser] = useState("");
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+  const [gains, setGains] = useState([]);
+  const [learned, setLearned] = useState([]);
+  const [mem, setMem] = useState({});
+  const [gameCount, setGameCount] = useState(0);
+
+  useEffect(() => {
+    (async () => {
+      try { const u = STORE && (await STORE.get(CCUSER)); if (u && u.value) setUser(u.value); } catch (e) {}
+      let lp = [];
+      try { const t = STORE && (await STORE.get(TREEKEY)); if (t && t.value) { lp = JSON.parse(t.value); setLearned(lp); } } catch (e) {}
+      try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {}
+      try {
+        const c = STORE && (await STORE.get(CCCACHE));
+        if (c && c.value) { const d = JSON.parse(c.value); if (d.user) analyze(Object.values(d.months || {}).flat(), treeFor(lp)); }
+      } catch (e) {}
+    })();
+  }, []);
+
+  const treeFor = (lp) => (lp.length ? buildTree([...CORE_PACK_IDS, ...lp.filter((id) => LEARNABLE_PACK_IDS.includes(id))]) : DEFAULT_TREE);
+  const currentTree = useMemo(() => treeFor(learned), [learned]);
+
+  const analyze = (recs, treeOverride) => {
+    const games = recs.map((g) => ({ white: !!g.w, s: g.s, r: g.r, t: g.t, url: g.url }));
+    const tree = treeOverride || currentTree;
+    const r = analyzeGames(tree, { sq, posKey, START }, games);
+    const inTree = tree.packIds;
+    const cands = LEARNABLE_PACK_IDS.filter((id) => !inTree.includes(id))
+      .map((id) => ({ id, tree: buildTree([...inTree, id]) }));
+    setGains(packGains(tree, cands, r.leaks));
+    setRes(r); setGameCount(games.filter((g) => g.white).length);
+    setStatus(null);
+  };
+
+  const fetchGames = async () => {
+    const u = user.trim().toLowerCase();
+    if (!u) { setStatus("enter your chess.com username first"); return; }
+    setBusy(true);
+    try {
+      try { if (STORE) await STORE.set(CCUSER, u); } catch (e) {}
+      setStatus("fetching archive list…");
+      const ar = await (await fetch(`https://api.chess.com/pub/player/${u}/games/archives`)).json();
+      const months = ar.archives || [];
+      if (!months.length) { setStatus("no games found for that username"); setBusy(false); return; }
+      let cache = {};
+      try { const c = STORE && (await STORE.get(CCCACHE)); if (c && c.value) cache = JSON.parse(c.value); } catch (e) {}
+      if (cache.user !== u) cache = { user: u, months: {} };
+      const cur = months[months.length - 1];
+      const out = [];
+      for (let i = 0; i < months.length; i++) {
+        const url = months[i];
+        const mk = url.slice(-7).replace("/", "-");
+        let recs = cache.months[mk];
+        if (!recs || url === cur) {
+          setStatus(`fetching ${mk} (${i + 1}/${months.length})…`);
+          const d = await (await fetch(url)).json();
+          recs = (d.games || [])
+            .filter((g) => g.time_class === "rapid" && g.rules === "chess" && g.pgn)
+            .map((g) => ({ w: g.white.username.toLowerCase() === u ? 1 : 0, s: sanList(g.pgn).slice(0, 44),
+              r: g.white.username.toLowerCase() === u ? g.white.result : g.black.result, t: g.end_time, url: g.url }));
+          cache.months[mk] = recs;
+        }
+        out.push(...recs);
+      }
+      try { if (STORE) await STORE.set(CCCACHE, JSON.stringify(cache)); } catch (e) {}
+      analyze(out);
+    } catch (e) { setStatus("fetch failed — check the username and your connection"); }
+    setBusy(false);
+  };
+
+  const chipOf = (id) => (PACKS.find((p) => p.id === id) || {}).chip || id;
+  const coveredBy = (leak) => { const g = gains.find((x) => x.covers.includes(leak.move) && x.n >= leak.n); return g ? g.id : null; };
+  const moveNoOf = (ply) => Math.floor(ply / 2) + 1;
+  const Card = ({ title, children }) => (
+    <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: C.muted }}>{title}</div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4 px-5 pb-8">
+      <Eyebrow>{"♟"} My games — the tree vs reality</Eyebrow>
+      <div className="flex gap-2">
+        <input value={user} onChange={(e) => setUser(e.target.value)} placeholder="chess.com username"
+          style={{ flex: 1, background: C.card, color: C.cream, border: `1px solid ${C.line}`, borderRadius: 8, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, padding: "10px 12px" }} />
+        <button onClick={fetchGames} disabled={busy}
+          style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, borderRadius: 8, padding: "0 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: busy ? 0.5 : 1 }}>
+          {busy ? "…" : res ? "Refresh" : "Analyze"}
+        </button>
+      </div>
+      {status && <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, margin: 0 }}>{status}</p>}
+      {res && (<>
+        <Card title={`COVERAGE · from ${res.totals.e4} rapid games as White`}>
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 40, color: C.gold, lineHeight: 1 }}>{Math.round(100 * res.coverage)}%</span>
+            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85, lineHeight: 1.45 }}>of your 1.e4 games would run inside your current tree to a line’s end, if you play your moves — estimated node-by-node from your own opponents.</span>
+          </div>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
+            observed endings: {res.totals.done} ran a full line · {res.totals.opp} opponent left · {res.totals.user} you left first
+          </div>
+          {gains.length > 0 && (
+            <div className="flex flex-col gap-1 pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
+              {gains.map((g) => (
+                <div key={g.id} style={{ fontSize: 12.5, color: C.gold }}>
+                  ＋ {chipOf(g.id)} would absorb <b>{g.n}</b> of these games ({Math.round((100 * g.n) / Math.max(1, res.totals.e4))}%) — learn it, then add it on the Daily page.
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+        <Card title="TOP LEAKS · where opponents leave your tree">
+          {res.leaks.slice(0, 8).map((L, i) => {
+            const cb = coveredBy(L);
+            return (
+              <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
+                <span style={{ color: C.cream }}>
+                  {moveNoOf(L.ply)}… <b>{L.move}</b>
+                  {cb ? <span style={{ color: C.gold }}> · {chipOf(cb)} covers this</span> : null}
+                </span>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: L.score != null && L.score < 45 ? C.red : C.muted, whiteSpace: "nowrap" }}>
+                  {L.n}× · you score {L.score == null ? "—" : L.score + "%"}
+                </span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>ranked by frequency × score deficit — a common line you already beat is not a priority.</div>
+        </Card>
+        <Card title="YOUR MISSES · tree positions where you left book first">
+          {res.misses.length === 0 && <div style={{ fontSize: 12.5, color: C.cream }}>None — every deviation was your opponent’s. Keep it that way.</div>}
+          {res.misses.slice(0, 8).map((m, i) => {
+            const rec = mem[m.key];
+            const R = retrievability(rec, Date.now());
+            const played = Object.entries(m.plays).sort((a, b) => b[1] - a[1]).map(([mv, n2]) => `${mv}×${n2}`).join(" ");
+            return (
+              <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
+                <span style={{ color: C.cream }}>move {moveNoOf(m.ply)}: expected <b style={{ color: C.gold }}>{m.expected}</b> — played {played}</span>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: m.recent ? C.red : C.muted, whiteSpace: "nowrap" }}>
+                  {m.n}×{m.recent ? ` · ${m.recent} recent` : ""} · {rec ? `R ${R.toFixed(2)}` : "untrained"}
+                </span>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>
+            “recent” = last 30 days. Old misses are mostly pre-training habits; recent misses on trained ground are the real flags — drill those runs today.
+          </div>
+        </Card>
+        <Card title="RESULTS BY BUCKET">
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: C.cream, lineHeight: 1.8 }}>
+            line completed: {res.totals.done} games · score {res.scores.done == null ? "—" : res.scores.done + "%"}<br />
+            opponent left tree: {res.totals.opp} · score {res.scores.opp == null ? "—" : res.scores.opp + "%"}<br />
+            you left first: {res.totals.user} · score {res.scores.user == null ? "—" : res.scores.user + "%"}
+          </div>
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>the value proposition, measured: the gap between “line completed” and the rest is what the tree is worth per game.</div>
+        </Card>
+      </>)}
+      {!res && !busy && (
+        <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.6 }}>
+          Fetches your public chess.com rapid games (straight from your device — nothing leaves it except the chess.com request), walks every 1.e4 game against your tree, and reports: how much of your real opposition your lines cover, where the leaks are, which pack would plug them, and where YOU left book first.
+        </p>
+      )}
+      <Btn full tone="ghost" onClick={onExit}>{"←"} Back</Btn>
     </div>
   );
 }
@@ -3798,12 +4106,16 @@ export default function LinesMock() {
         <header className="px-5 pt-5 pb-3 flex flex-col gap-3">
           <div className="flex items-baseline justify-between">
             <div style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 22 }}>lines</div>
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, letterSpacing: "0.08em" }}>{view === "daily" ? "⚡ DAILY GAUNTLET · SCOTCH" : pack.badge}</div>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, letterSpacing: "0.08em" }}>{view === "daily" ? "⚡ DAILY GAUNTLET" : view === "games" ? "♟ MY GAMES · COVERAGE" : pack.badge}</div>
           </div>
           {view === "packs" && (<>
           <button onClick={() => setView("daily")} className="rounded-md px-4 py-2.5 text-left"
             style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, fontSize: 13.5, fontWeight: 600 }}>
-            ⚡ Daily gauntlet — the whole Scotch, shuffled →
+            ⚡ Daily gauntlet — your whole tree, shuffled →
+          </button>
+          <button onClick={() => setView("games")} className="rounded-md px-4 py-2.5 text-left"
+            style={{ background: "transparent", border: `1px solid ${C.line}`, color: C.cream, fontSize: 13, fontWeight: 500 }}>
+            ♟ My games — coverage, leaks, what to learn →
           </button>
           <div className="flex flex-col gap-1">
             {[true, false].map((rep) => (
@@ -3852,8 +4164,9 @@ export default function LinesMock() {
           ) : null}
           </>)}
         </header>
-        <main className="flex-1 pb-28 pt-2" style={{ paddingLeft: view === "daily" ? 0 : 20, paddingRight: view === "daily" ? 0 : 20 }}>
+        <main className="flex-1 pb-28 pt-2" style={{ paddingLeft: view === "packs" ? 20 : 0, paddingRight: view === "packs" ? 20 : 0 }}>
           {view === "daily" && <Gauntlet onExit={() => setView("packs")} />}
+          {view === "games" && <GamesPanel onExit={() => setView("packs")} />}
           {view === "packs" && tab === "end" && <EndScreen key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "learn" && <LearnFlow key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "edge" && <EdgeCases key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
@@ -3883,4 +4196,4 @@ export default function LinesMock() {
 }
 
 /* ---------- test exports (tools/*.mjs) — export-only edit, no behavior change ---------- */
-export { engineCore, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder };
+export { engineCore, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS };

@@ -1,12 +1,12 @@
-// Round-trip audit: a synthetic training state pushed through the export
-// serializer and back through the restore parser must reproduce itself exactly
-// (positions, days, via-doors, run records, lifetime). This is the user's
-// backup path across origins — it must never break.
+// Round-trip audit (v6.3 schema): a synthetic training state pushed through the
+// export serializer and back through the restore parser must reproduce itself
+// exactly (positions, H/last/relearn, via-doors, event logs, days, run records,
+// lifetime) — on the default tree AND the extended (learned-packs) tree.
+// Also: a v6.2-era export (c-based confidence) must still restore as a seed.
 //
 // buildExport/parseImport below are faithful ports of buildExport/doImport in
 // src/app.jsx (they live inside the Gauntlet component and close over React
-// state, so they cannot be imported directly; the app file must not be
-// refactored). The source-anchor checks at the bottom fail this tool if the
+// state). The source-anchor checks at the bottom fail this tool if the
 // app-side implementations drift — keep the ports in sync.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,10 +15,12 @@ import { dirname, join } from "node:path";
 import { loadApp } from "./_load.mjs";
 
 const app = await loadApp();
-const { RUNS, REP, APP_VER, dayInfo } = app;
+const { APP_VER, dayInfo, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS } = app;
+const { retrievability, seedFromConf } = await import("../src/scoring.js");
 
 /* ---- port of buildExport (src/app.jsx, Gauntlet) ---- */
-function buildExport({ conf, days, lifeRuns, lifeClean }) {
+function buildExport(T, { conf, days, lifeRuns, lifeClean }) {
+  const RUNS = T.RUNS, REP = T.REP;
   const positions = {};
   for (const r of RUNS) r.userKeys.forEach((k2, j2) => {
     if (!positions[k2]) positions[k2] = { at: r.id + "@" + (j2 + 1), move: (REP.user[k2] || {}).san || "?", runs: [] };
@@ -27,10 +29,14 @@ function buildExport({ conf, days, lifeRuns, lifeClean }) {
   const runsDict = {};
   RUNS.forEach((r) => { runsDict[r.sig] = { id: r.id, label: r.label, pack: r.packId, kind: r.kind, moves: r.sans.filter(Boolean).join(" ") }; });
   const mastery = {};
+  const nowX = Date.now();
   Object.keys(conf).forEach((k2) => {
     const at = (positions[k2] || { at: "off-tree" }).at;
     const r = conf[k2];
-    mastery[at] = { c: Math.round(r.c * 100) / 100, seen: r.seen || 0, miss: r.miss || 0, cracks: r.cracks || 0, via: r.via || {}, move: (positions[k2] || {}).move, sharedBy: (positions[k2] || { runs: [] }).runs.length };
+    mastery[at] = { H: Math.round((r.H || 0) * 100) / 100, last: r.last ? new Date(r.last).toISOString() : null,
+      R: Math.round(retrievability(r, nowX) * 100) / 100, relearn: !!r.relearn,
+      seen: r.seen || 0, miss: r.miss || 0, cracks: r.cracks || 0, via: r.via || {}, ev: r.ev || [],
+      move: (positions[k2] || {}).move, sharedBy: (positions[k2] || { runs: [] }).runs.length };
   });
   const daysX = {};
   Object.keys(days).forEach((ds) => {
@@ -42,20 +48,17 @@ function buildExport({ conf, days, lifeRuns, lifeClean }) {
     if (inf) daysX[ds].summary = inf;
   });
   return {
-    _schema: "mastery[pos].c: confidence 0-1 (proven>=0.8; +0.4*(1-c) on first clean hand-play per day; *0.25 on miss). via[door]=[handEncounters,misses] keyed by the opponent move that led in. days[date].plays[run]={m:misses,u:handMoves,ff:fastForwarded,fx:fixedOnRedo}. Positions labeled runId@userPlyIndex.",
     meta: { app: APP_VER, exported: new Date().toISOString(), runs: RUNS.length, positions: REP.totalUser, lifetime: { runs: lifeRuns, clean: lifeClean } },
-    runs: runsDict,
-    mastery,
-    days: daysX,
+    runs: runsDict, mastery, days: daysX,
   };
 }
 
 /* ---- port of doImport (src/app.jsx, Gauntlet); setters become returned state ---- */
-function parseImport(txt) {
+function parseImport(T, txt) {
   try {
     const d = JSON.parse(txt);
     const at2key = {}, id2sig = {};
-    for (const r of RUNS) {
+    for (const r of T.RUNS) {
       id2sig[r.id] = r.sig;
       r.userKeys.forEach((k2, j2) => { const at = r.id + "@" + (j2 + 1); if (!at2key[at]) at2key[at] = k2; });
     }
@@ -64,7 +67,9 @@ function parseImport(txt) {
       Object.keys(d.mastery).forEach((at) => {
         const k2 = at2key[at]; if (!k2) return;
         const m = d.mastery[at];
-        nc[k2] = { c: m.c || 0, seen: m.seen || 0, miss: m.miss || 0, cracks: m.cracks || 0, via: m.via || {} };
+        nc[k2] = m.H != null
+          ? { H: m.H || 0, last: m.last ? Date.parse(m.last) : 0, relearn: !!m.relearn, seen: m.seen || 0, miss: m.miss || 0, cracks: m.cracks || 0, via: m.via || {}, ev: m.ev || [] }
+          : seedFromConf(m.c || 0, m.seen, m.miss, m.cracks, m.via, Date.now());
       });
       const nd = {};
       Object.keys(d.days || {}).forEach((ds) => {
@@ -72,69 +77,76 @@ function parseImport(txt) {
         Object.keys(rec.plays || {}).forEach((id) => { const sg = id2sig[id]; if (sg) plays[sg] = rec.plays[id]; });
         nd[ds] = { plays, cracks: (rec.cracks || []).map((at) => at2key[at]).filter(Boolean) };
       });
-      const nh = {}, nm = {};
-      Object.keys(nc).forEach((k2) => {
-        if ((nc[k2].seen || 0) > (nc[k2].miss || 0)) nh[k2] = true;
-        if (nc[k2].miss) nm[k2] = nc[k2].miss;
-      });
       const lt = (d.meta || {}).lifetime || {};
-      return { ok: true, nc, nd, nh, nm, lifeRuns: lt.runs || 0, lifeClean: lt.clean || 0 };
+      return { ok: true, nc, nd, lifeRuns: lt.runs || 0, lifeClean: lt.clean || 0 };
     }
-    return { ok: false, msg: "unrecognized format" };
-  } catch (e) { return { ok: false, msg: "could not parse" }; }
+    return { ok: false };
+  } catch (e) { return { ok: false }; }
 }
 
-/* ---- synthetic training state over the real tree ---- */
-assert.ok(RUNS.length > 0, "RUNS is empty");
-const conf = {}, days = {};
-let n = 0;
-for (const r of RUNS) {
-  r.userKeys.forEach((k2, j2) => {
-    if (conf[k2]) return;
-    n++;
-    if (n % 3 === 0) return; // leave a third of the tree untrained
-    const opp = REP.opp[k2] || [];
-    const via = {};
-    if (j2 > 0 && opp.length) via[opp[0].san || opp[0].m] = [1 + (n % 4), n % 2];
-    conf[k2] = { c: Math.round(((n * 7) % 100)) / 100, seen: 1 + (n % 6), miss: n % 3, cracks: n % 2, via };
-  });
+/* ---- run the round trip on a tree ---- */
+function roundtrip(T, label) {
+  assert.ok(T.RUNS.length > 0, "RUNS is empty");
+  const conf = {}, days = {};
+  const base = Date.parse("2026-08-01T09:00:00Z");
+  let n = 0;
+  for (const r of T.RUNS) {
+    r.userKeys.forEach((k2, j2) => {
+      if (conf[k2]) return;
+      n++;
+      if (n % 3 === 0) return; // leave a third untrained
+      const opp = T.REP.opp[k2] || [];
+      const door = j2 > 0 && opp.length ? (opp[0].san || opp[0].m) : "start";
+      const via = { [door]: [1 + (n % 4), n % 2] };
+      const ev = [[Math.round((base + n * 8.64e7) / 60000), n % 2, door, 700 + n * 13], [Math.round((base + (n + 1) * 8.64e7) / 60000), 1, door, 950]];
+      conf[k2] = { H: Math.round((0.5 + (n % 17) * 0.83) * 100) / 100, last: base + (n % 9) * 8.64e7,
+        relearn: n % 7 === 0, seen: 1 + (n % 6), miss: n % 3, cracks: n % 2, via, ev };
+    });
+  }
+  const sigs = T.RUNS.map((r) => r.sig);
+  days["2026-08-15"] = {
+    plays: { [sigs[0]]: { m: 0, u: T.RUNS[0].uCount, ff: 2, fx: 0 }, [sigs[1]]: { m: 2, u: T.RUNS[1].uCount, ff: 0, fx: 1 } },
+    cracks: [T.RUNS[1].userKeys[1]],
+  };
+  days["2026-08-17"] = {
+    plays: Object.fromEntries(sigs.slice(0, 5).map((sg, i) => [sg, { m: i % 2, u: T.RUNS[i].uCount, ff: i, fx: 0 }])),
+    cracks: [T.RUNS[0].userKeys[0], T.RUNS[4].userKeys[2]],
+  };
+  const state = { conf, days, lifeRuns: 57, lifeClean: 31 };
+
+  const exported = JSON.stringify(buildExport(T, state));
+  const r = parseImport(T, exported);
+  assert.ok(r.ok, "restore parser rejected a fresh export");
+  assert.deepStrictEqual(r.nc, conf, `[${label}] memory state (H/last/relearn/via/ev) did not round-trip exactly`);
+  const expectedDays = Object.fromEntries(Object.entries(days).map(([ds, rec]) => [ds, { plays: rec.plays, cracks: rec.cracks }]));
+  assert.deepStrictEqual(r.nd, expectedDays, `[${label}] day records did not round-trip exactly`);
+  assert.equal(r.lifeRuns, 57); assert.equal(r.lifeClean, 31);
+
+  const ex = JSON.parse(exported);
+  for (const run of T.RUNS) {
+    const rec = ex.runs[run.sig];
+    assert.ok(rec, `[${label}] run ${run.id} missing from export run records`);
+    assert.equal(rec.id, run.id); assert.equal(rec.pack, run.packId); assert.equal(rec.kind, run.kind);
+  }
+  const ats = new Set();
+  for (const at of Object.keys(ex.mastery)) { assert.ok(!ats.has(at), `duplicate position address ${at}`); ats.add(at); }
+  return { positions: Object.keys(conf).length, runs: T.RUNS.length };
 }
-const sigs = RUNS.map((r) => r.sig);
-days["2026-08-15"] = {
-  plays: { [sigs[0]]: { m: 0, u: RUNS[0].uCount, ff: 2, fx: 0 }, [sigs[1]]: { m: 2, u: RUNS[1].uCount, ff: 0, fx: 1 } },
-  cracks: [RUNS[1].userKeys[1]],
-};
-days["2026-08-17"] = {
-  plays: Object.fromEntries(sigs.slice(0, 5).map((sg, i) => [sg, { m: i % 2, u: RUNS[i].uCount, ff: i, fx: 0 }])),
-  cracks: [RUNS[0].userKeys[0], RUNS[4].userKeys[2]],
-};
-const state = { conf, days, lifeRuns: 57, lifeClean: 31 };
 
-/* ---- the round trip ---- */
-const exported = JSON.stringify(buildExport(state));
-const r = parseImport(exported);
-assert.ok(r.ok, "restore parser rejected a fresh export");
+const dflt = roundtrip(buildTree(CORE_PACK_IDS), "core");
+const full = roundtrip(buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]), "core+learned");
 
-assert.deepStrictEqual(r.nc, conf, "mastery state (positions/via-doors) did not round-trip exactly");
-const expectedDays = Object.fromEntries(Object.entries(days).map(([ds, rec]) => [ds, { plays: rec.plays, cracks: rec.cracks }]));
-assert.deepStrictEqual(r.nd, expectedDays, "day records did not round-trip exactly");
-assert.equal(r.lifeRuns, 57, "lifetime runs lost");
-assert.equal(r.lifeClean, 31, "lifetime clean lost");
-
-// run records: every run appears in the export with its identity intact
-const ex = JSON.parse(exported);
-for (const run of RUNS) {
-  const rec = ex.runs[run.sig];
-  assert.ok(rec, `run ${run.id} missing from export run records`);
-  assert.equal(rec.id, run.id);
-  assert.equal(rec.pack, run.packId);
-  assert.equal(rec.kind, run.kind);
-}
-// addresses must be unambiguous: distinct positions never share an at-label
-const ats = new Set();
-for (const at of Object.keys(ex.mastery)) {
-  assert.ok(!ats.has(at), `duplicate position address ${at}`);
-  ats.add(at);
+/* ---- v6.2 export still restores (best-effort seed) ---- */
+{
+  const T = buildTree(CORE_PACK_IDS);
+  const at = T.RUNS[0].id + "@1";
+  const legacy = JSON.stringify({ mastery: { [at]: { c: 0.85, seen: 9, miss: 1, cracks: 0, via: { start: [9, 1] } } }, days: {}, meta: { lifetime: { runs: 5, clean: 2 } } });
+  const r = parseImport(T, legacy);
+  assert.ok(r.ok && r.nc[T.RUNS[0].userKeys[0]], "v6.2 export must still restore");
+  const rec = r.nc[T.RUNS[0].userKeys[0]];
+  assert.equal(rec.H, 3, "proven v6.2 position should seed H=3d");
+  assert.equal(rec.seen, 9); assert.equal(rec.via.start[0], 9);
+  assert.equal(r.lifeRuns, 5);
 }
 
 /* ---- source anchors: fail loudly if the app-side serializer/parser drift ---- */
@@ -142,10 +154,11 @@ const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "sr
 for (const anchor of [
   'at: r.id + "@" + (j2 + 1)',
   'const at2key = {}, id2sig = {};',
-  'nc[k2] = { c: m.c || 0, seen: m.seen || 0, miss: m.miss || 0, cracks: m.cracks || 0, via: m.via || {} };',
-  'mastery[at] = { c: Math.round(r.c * 100) / 100, seen: r.seen || 0, miss: r.miss || 0, cracks: r.cracks || 0, via: r.via || {}',
+  'mastery[at] = { H: Math.round((r.H || 0) * 100) / 100, last: r.last ? new Date(r.last).toISOString() : null,',
+  '? { H: m.H || 0, last: m.last ? Date.parse(m.last) : 0, relearn: !!m.relearn, seen: m.seen || 0, miss: m.miss || 0, cracks: m.cracks || 0, via: m.via || {}, ev: m.ev || [] }',
+  ': seedFromConf(m.c || 0, m.seen, m.miss, m.cracks, m.via, Date.now())',
 ]) {
   assert.ok(src.includes(anchor), `src/app.jsx serializer/parser changed (anchor not found: ${anchor}) — update the ports in tools/roundtrip.mjs to match`);
 }
 
-console.log(`roundtrip: ${Object.keys(conf).length} positions, ${Object.keys(days).length} days, ${RUNS.length} run records — exact state equality after export→restore.`);
+console.log(`roundtrip: v6.3 exact equality on core (${dflt.positions} pos, ${dflt.runs} runs) and core+learned (${full.positions} pos, ${full.runs} runs); v6.2 exports seed correctly.`);

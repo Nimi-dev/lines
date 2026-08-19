@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import { loadApp } from "./_load.mjs";
 
-const { REP, PACKS } = await loadApp();
+const { PACKS, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS, engineCore, applyMoves, toFEN, posKey } = await loadApp();
+const { REP, REPX } = buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]); // audit the FULL gauntlet-able tree
 
 const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
 const FILE = (i) => i % 8, RANK = (i) => (i / 8) | 0;
@@ -71,9 +72,17 @@ function seeOfMove(b, tok) {
 
 const decodeKey = (key) => key.slice(0, 64).split("").map((ch) => (ch === "." ? null : ch));
 
+/* legality filter: run a real legal-move check for the FIRST recapture — a move
+   that gives check (discovered or direct) often cannot legally be captured at
+   all, and static SEE would wrongly flag it (e.g. the Petroff 5.Nc6+!). */
+const core = engineCore();
+const hasLegalRecapture = (fenAfter, targetSq) => {
+  core.parseFen(fenAfter);
+  return core.legalCaptureTargets().includes(targetSq);
+};
+
 /* self-check: the detector must flag a known blunder and clear a known-sound capture */
 {
-  const { applyMoves } = await loadApp();
   const b1 = applyMoves(["e2e4", "e7e5", "g1f3", "b8c6"]);
   assert.ok(seeOfMove(b1, "f3e5") < 0, "self-check failed: 3.Nxe5?? (knight for defended pawn) not flagged");
   const b2 = applyMoves(["e2e4", "e7e5", "g1f3", "b8c6", "d2d4", "e5d4"]);
@@ -83,7 +92,21 @@ const decodeKey = (key) => key.slice(0, 64).split("").map((ch) => (ch === "." ? 
 const entries = Object.entries(REP.user);
 assert.ok(entries.length > 0, "repertoire tree is empty — REP.user has no positions");
 
-let checked = 0, skippedCastle = 0;
+// histories per position (for legal-recapture FENs)
+const histOf = new Map();
+{
+  const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = (g.charCodeAt(3) - 49) * 8 + (g.charCodeAt(2) - 97), fr = (g.charCodeAt(1) - 49) * 8 + (g.charCodeAt(0) - 97); nb[f] = nb[fr]; nb[fr] = null; } return nb; };
+  for (const pt of REPX.paths) {
+    let b = applyMoves([]); const hist = [];
+    for (let k = 0; k < pt.toks.length; k++) {
+      const key = posKey(b, k % 2);
+      if (k % 2 === 0 && !histOf.has(key)) histOf.set(key, hist.slice());
+      b = applyTok(b, pt.toks[k]); hist.push(pt.toks[k]);
+    }
+  }
+}
+
+let checked = 0, skippedCastle = 0, checkExempt = 0;
 const losers = [];
 for (const [key, u] of entries) {
   assert.equal(key[64], "0", `user-move position not White to move: ${key}`);
@@ -91,7 +114,17 @@ for (const [key, u] of entries) {
   if (u.m.includes(",")) { skippedCastle++; continue; } // castling: no exchange on a landing square
   const net = seeOfMove(b, u.m);
   checked++;
-  if (net < 0) losers.push({ san: u.san || u.m, m: u.m, packId: u.packId, net });
+  if (net < 0) {
+    // before flagging: is the landing square actually capturable? (check-legality)
+    const hist = histOf.get(key) || [];
+    const nb = b.slice();
+    const sqi = (n) => (n.charCodeAt(1) - 49) * 8 + (n.charCodeAt(0) - 97);
+    const f = sqi(u.m.slice(0, 2)), t = sqi(u.m.slice(2, 4));
+    nb[t] = nb[f]; nb[f] = null;
+    const fenAfter = toFEN(nb, [...hist, u.m], hist.length + 1);
+    if (!hasLegalRecapture(fenAfter, t)) { checkExempt++; continue; }
+    losers.push({ san: u.san || u.m, m: u.m, packId: u.packId, net });
+  }
 }
 
 for (const L of losers) {
@@ -99,4 +132,4 @@ for (const L of losers) {
   console.error(`  LOSING MOVE ${L.san} (${L.m}) in ${chip}: SEE ${L.net}`);
 }
 assert.equal(losers.length, 0, `${losers.length} material-losing scripted move(s) in the tree`);
-console.log(`see-audit: ${checked} scripted White moves across ${entries.length} tree positions — zero material-losing (${skippedCastle} castling moves exempt).`);
+console.log(`see-audit: ${checked} scripted White moves across ${entries.length} tree positions — zero material-losing (${skippedCastle} castling exempt, ${checkExempt} check-legality exempt).`);
