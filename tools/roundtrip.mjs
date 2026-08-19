@@ -19,7 +19,7 @@ const { APP_VER, dayInfo, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS } = app;
 const { retrievability, seedFromConf } = await import("../src/scoring.js");
 
 /* ---- port of buildExport (src/app.jsx, Gauntlet) ---- */
-function buildExport(T, { conf, days, lifeRuns, lifeClean }) {
+function buildExport(T, { conf, days, lifeRuns, lifeClean, learnedSigs = {} }) {
   const RUNS = T.RUNS, REP = T.REP;
   const positions = {};
   for (const r of RUNS) r.userKeys.forEach((k2, j2) => {
@@ -50,6 +50,7 @@ function buildExport(T, { conf, days, lifeRuns, lifeClean }) {
   return {
     meta: { app: APP_VER, exported: new Date().toISOString(), runs: RUNS.length, positions: REP.totalUser, lifetime: { runs: lifeRuns, clean: lifeClean } },
     runs: runsDict, mastery, days: daysX,
+    learn: { learned: learnedSigs },
   };
 }
 
@@ -78,7 +79,7 @@ function parseImport(T, txt) {
         nd[ds] = { plays, cracks: (rec.cracks || []).map((at) => at2key[at]).filter(Boolean) };
       });
       const lt = (d.meta || {}).lifetime || {};
-      return { ok: true, nc, nd, lifeRuns: lt.runs || 0, lifeClean: lt.clean || 0 };
+      return { ok: true, nc, nd, lifeRuns: lt.runs || 0, lifeClean: lt.clean || 0, learned: (d.learn || {}).learned || {} };
     }
     return { ok: false };
   } catch (e) { return { ok: false }; }
@@ -112,7 +113,8 @@ function roundtrip(T, label) {
     plays: Object.fromEntries(sigs.slice(0, 5).map((sg, i) => [sg, { m: i % 2, u: T.RUNS[i].uCount, ff: i, fx: 0 }])),
     cracks: [T.RUNS[0].userKeys[0], T.RUNS[4].userKeys[2]],
   };
-  const state = { conf, days, lifeRuns: 57, lifeClean: 31 };
+  const learnedSigs = { [T.RUNS[0].sig]: 1755500000000, [T.RUNS[2].sig]: 1755500001000 };
+  const state = { conf, days, lifeRuns: 57, lifeClean: 31, learnedSigs };
 
   const exported = JSON.stringify(buildExport(T, state));
   const r = parseImport(T, exported);
@@ -121,6 +123,7 @@ function roundtrip(T, label) {
   const expectedDays = Object.fromEntries(Object.entries(days).map(([ds, rec]) => [ds, { plays: rec.plays, cracks: rec.cracks }]));
   assert.deepStrictEqual(r.nd, expectedDays, `[${label}] day records did not round-trip exactly`);
   assert.equal(r.lifeRuns, 57); assert.equal(r.lifeClean, 31);
+  assert.deepStrictEqual(r.learned, learnedSigs, `[${label}] learned-lines set did not round-trip`);
 
   const ex = JSON.parse(exported);
   for (const run of T.RUNS) {
@@ -157,6 +160,8 @@ for (const anchor of [
   'mastery[at] = { H: Math.round((r.H || 0) * 100) / 100, last: r.last ? new Date(r.last).toISOString() : null,',
   '? { H: m.H || 0, last: m.last ? Date.parse(m.last) : 0, relearn: !!m.relearn, seen: m.seen || 0, miss: m.miss || 0, cracks: m.cracks || 0, via: m.via || {}, ev: m.ev || [] }',
   ': seedFromConf(m.c || 0, m.seen, m.miss, m.cracks, m.via, Date.now())',
+  'learn: { learned: LEARN.state().learned }',
+  'if (d.learn && d.learn.learned) LEARN.replace(d.learn.learned);',
 ]) {
   assert.ok(src.includes(anchor), `src/app.jsx serializer/parser changed (anchor not found: ${anchor}) — update the ports in tools/roundtrip.mjs to match`);
 }
