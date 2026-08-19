@@ -7,8 +7,13 @@ import { spawn } from "node:child_process";
 import puppeteer from "puppeteer-core";
 import assert from "node:assert/strict";
 
-const server = spawn("npx", ["vite", "preview", "--port", "4189"], { stdio: "ignore", detached: false });
-await new Promise((r) => setTimeout(r, 3500));
+// full stack: wrangler serves dist AND the /api functions with a local D1,
+// so the smoke also proves the telemetry stream flows during real play
+const server = spawn("npx", ["wrangler", "pages", "dev", "dist", "--port", "4189"], { stdio: "ignore", detached: false });
+for (let i = 0; i < 30; i++) {
+  try { const r = await fetch("http://localhost:4189/api/health"); if (r.ok) break; } catch (e) {}
+  await new Promise((r) => setTimeout(r, 1000));
+}
 
 const browser = await puppeteer.launch({
   executablePath: process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -48,7 +53,7 @@ const tapSquare = async (name, flip = false) => {
 
 await page.goto("http://localhost:4189/", { waitUntil: "networkidle0" });
 step("app renders", await hasText("lines"));
-step("footer stamps v6.5·git", await hasText("v6.5·git"));
+step("footer stamps v6.6·git", await hasText("v6.6·git"));
 step("Learn is the default page", await hasText("one line at a time"));
 step("learned counter starts 0/36", await hasText("0/36 learned"));
 step("Black section renders defenses", await hasText("YOUR DEFENSES"));
@@ -116,6 +121,11 @@ step("both lines in the session list", await page.evaluate(() => {
   return t.includes("MIE·F1") && t.includes("VSD·1");
 }));
 
+// telemetry flowed during the session (app_open + hand_plays + learn events)
+await page.evaluate(() => new Promise((r) => setTimeout(r, 2500))); // let a flush fire
+const health = await (await fetch("http://localhost:4189/api/health")).json();
+step(`telemetry ingested (${health.events} events in local D1)`, health.db === "ok" && health.events >= 5);
+
 // games page
 await clickByText("♟ Games");
 await new Promise((r) => setTimeout(r, 400));
@@ -125,4 +135,4 @@ if (errors.length) console.log("PAGE ERRORS:", errors.slice(0, 5));
 assert.equal(errors.filter((e) => !e.includes("favicon")).length, 0, "page errors logged");
 await browser.close();
 server.kill();
-console.log("smoke: v6.5 learn→try→practice loop passed for BOTH colors, no page errors.");
+console.log("smoke: full-stack loop passed for BOTH colors, telemetry flowing, no page errors.");

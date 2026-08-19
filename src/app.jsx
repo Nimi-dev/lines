@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { MEM, retrievability, foldResult, owned, seedFromConf } from "./scoring.js";
 import { sanList, analyzeGames, scorePct } from "./games.js";
 import { buildLineDoc, buildClusters, runStatus, grandfathered, learnNext, practiceNext } from "./learn.js";
+import { createTelemetry } from "./telemetry.js";
 
 /* ---------- palette ---------- */
 const C = {
@@ -3545,7 +3546,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.5·git";
+const APP_VER = "v6.6·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -3568,6 +3569,11 @@ const SAVER = (() => {
     subscribe: (f) => { subs.add(f); return () => subs.delete(f); },
   };
 })();
+/* telemetry: the experience log — offline-first, batched to /api/log on this
+   same origin, idempotent server-side. Best-effort by contract: gameplay never
+   waits on it and never breaks because of it. */
+const TEL = createTelemetry({ store: STORE, appVer: APP_VER });
+
 /* learned-lines state: which runs have passed the Learn gate (walk + one clean
    try). Learned admits a line to the gauntlet; it is NOT memory evidence. */
 const LEARNKEY = "lines-learn-v1";
@@ -3823,6 +3829,17 @@ function Gauntlet({ onExit, onLearn }) {
 
   const today = dayStr();
   const todays = days[today] || { plays: {} };
+  const dayLoggedRef = useRef(null);
+  useEffect(() => {
+    if (!loaded || !session.length) return;
+    const done = Object.keys((days[today] || {}).plays || {}).length >= session.length;
+    if (done && dayLoggedRef.current !== today) {
+      dayLoggedRef.current = today;
+      const inf = dayInfo(days, today);
+      TEL.log("day_complete", { date: today, ...(inf || {}) });
+      TEL.log("snapshot", { mem: conf, days, learn: LEARN.state().learned, lifetime: { runs: lifeRuns, clean: lifeClean } });
+    }
+  });
   const order = useMemo(() => daySeedOrder(today, learnedRuns.length), [today, learnedRuns.length]);
   const session = useMemo(() => order.map((ix) => learnedRuns[ix]).filter(Boolean), [order, learnedRuns]);
   const playedN = Object.keys(todays.plays).length;
@@ -3857,7 +3874,13 @@ function Gauntlet({ onExit, onLearn }) {
   // v6.3 fold: stability gain indexed on the model's own prediction at test time.
   // door: the opponent move that delivered us here — logged on every hand encounter.
   const bumpConf = (k2, clean, door, latMs) => {
-    setConf((C0) => ({ ...C0, [k2]: foldResult(C0[k2], clean, Date.now(), door, latMs).rec }));
+    setConf((C0) => {
+      const fr = foldResult(C0[k2], clean, Date.now(), door, latMs);
+      TEL.log("hand_play", { key: k2, run: cur ? cur.id : null, ply: k, clean: clean ? 1 : 0, door,
+        latMs: latMs == null ? null : Math.round(latMs), R: Math.round(fr.R * 100) / 100,
+        H: Math.round(fr.rec.H * 100) / 100, cracked: fr.cracked ? 1 : 0 });
+      return { ...C0, [k2]: fr.rec };
+    });
   };
   const markHand = (k2) => setDays((D) => {
     const day = { ...(D[today] || { plays: {} }) };
@@ -3888,6 +3911,9 @@ function Gauntlet({ onExit, onLearn }) {
     });
     setLifeRuns((r) => r + 1);
     if (runMisses === 0) setLifeClean((c) => c + 1);
+    const handN = ffPlan.filter((x) => x !== "ff").length;
+    TEL.log("run_end", { run: cur ? cur.id : null, sig: curSig, side: cur ? cur.side : null,
+      misses: runMisses, hand: handN, ff: ffPlan.length - handN, clean: runMisses === 0 ? 1 : 0, cracks: runCracks });
     setMode("done");
   };
 
@@ -4032,6 +4058,7 @@ function Gauntlet({ onExit, onLearn }) {
         const lt = (d.meta || {}).lifetime || {};
         setLifeRuns(lt.runs || 0); setLifeClean(lt.clean || 0);
         if (d.learn && d.learn.learned) LEARN.replace(d.learn.learned);
+        TEL.log("restore", { positions: Object.keys(nc).length, days: Object.keys(nd).length, source: d.meta && d.meta.app ? d.meta.app : "unknown" });
         return `restored ${Object.keys(nc).length} positions across ${Object.keys(nd).length} day(s) — saving now.`;
       }
       return "unrecognized format — paste a full training-log export.";
@@ -4356,7 +4383,10 @@ function LineStudy({ run, onExit }) {
   useEffect(() => {
     if (mode !== "try") return;
     if (k >= toks.length) {
-      const t = setTimeout(() => { if (slips === 0) { LEARN.markLearned(run.sig); setMode("passed"); } else setMode("failed"); }, 600);
+      const t = setTimeout(() => {
+        TEL.log("learn_try", { run: run.id, side: run.side, slips, passed: slips === 0 ? 1 : 0 });
+        if (slips === 0) { LEARN.markLearned(run.sig); TEL.log("learn_done", { run: run.id, side: run.side }); setMode("passed"); } else setMode("failed");
+      }, 600);
       return () => clearTimeout(t);
     }
     if (k % 2 !== up) { const t = setTimeout(() => { setHist((h) => [...h, toks[k]]); setMsg(null); }, 480); return () => clearTimeout(t); }
@@ -4377,7 +4407,7 @@ function LineStudy({ run, onExit }) {
       else { setMiss(0); setMsg(`It was ${expected.san} — shown. Finish the line, then walk it again or retry.`); setHist((h) => [...h, expected.m]); }
     }
   };
-  const startTry = () => { LEARN.markWalked(run.sig); setHist([]); setSel(null); setMiss(0); setSlips(0); setMsg(null); setMode("try"); };
+  const startTry = () => { LEARN.markWalked(run.sig); TEL.log("learn_walk", { run: run.id, side: run.side }); setHist([]); setSel(null); setMiss(0); setSlips(0); setMsg(null); setMode("try"); };
   const restartWalk = () => { setWi(0); setMode("walk"); };
 
   const Note = ({ pl }) => (
@@ -4589,6 +4619,14 @@ function GamesPanel({ onExit }) {
       }
       try { if (STORE) await STORE.set(CCCACHE, JSON.stringify(cache)); } catch (e) {}
       GAMESTATS.setGames(out);
+      const R2 = GAMESTATS.res();
+      if (R2) {
+        for (const [side, rr] of [["w", R2.w], ["b", R2.b]]) {
+          TEL.log("games_analysis", { side, games: rr.totals.e4, coverage: Math.round(1000 * rr.coverage) / 1000,
+            leaks: rr.leaks.slice(0, 5).map((L) => ({ m: L.move, n: L.n, s: L.score })),
+            misses: rr.misses.slice(0, 5).map((m2) => ({ e: m2.expected, n: m2.n, r: m2.recent })) });
+        }
+      }
       setStatus(null);
     } catch (e) { setStatus("fetch failed — check the username and your connection"); }
     setBusy(false);
@@ -4700,6 +4738,12 @@ function GamesPanel({ onExit }) {
 
 export default function LinesMock() {
   const [view, setView] = useState("learn");
+  useEffect(() => {
+    (async () => { await TEL.load(); TEL.log("app_open", { ver: APP_VER }); })();
+    const onHide = () => { if (document.visibilityState === "hidden") TEL.beacon(); };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, []);
   const [packId, setPackId] = useState("mieses");
   const [fam, setFam] = useState("scotch");
   const [tab, setTab] = useState("end");

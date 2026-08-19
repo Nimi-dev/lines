@@ -1,0 +1,10 @@
+# Cloudflare Pages config-as-code: build output + the telemetry D1 binding.
+# database_id is the production D1 id (created via `wrangler d1 create lines-telemetry`).
+name = "lines-901"
+compatibility_date = "2026-08-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lines-telemetry"
+database_id = "PLACEHOLDER-UNTIL-CREATED"
