@@ -48,9 +48,9 @@ const tapSquare = async (name, flip = false) => {
 
 await page.goto("http://localhost:4189/", { waitUntil: "networkidle0" });
 step("app renders", await hasText("lines"));
-step("footer stamps v6.5·git", await hasText("v6.5·git"));
+step("footer stamps v6.6·git", await hasText("v6.6·git"));
 step("Learn is the default page", await hasText("one line at a time"));
-step("learned counter starts 0/36", await hasText("0/36 learned"));
+step("learned counter starts 0/41", await hasText("0/41 learned"));
 step("Black section renders defenses", await hasText("YOUR DEFENSES"));
 
 // Practice before anything is learned → empty-state gate
@@ -67,7 +67,17 @@ await new Promise((r) => setTimeout(r, 400));
 step("walk view opens", await hasText("walk the line"));
 step("board renders", await page.evaluate(() => document.querySelectorAll('img[src^="/pieces/"]').length === 32));
 let guard = 0;
-while (!(await hasText("Try it from memory")) && guard++ < 30) await clickByText("next move");
+step("walk offers a play button", await page.evaluate(() => [...document.querySelectorAll("button")].some((b) => b.textContent.includes("Play the line"))));
+// autoplay: press play once and the line advances on its own
+const plyCount = () => page.evaluate(() => { const m = document.body.innerText.match(/\b(\d+)\/(\d+)\b/); return m ? +m[1] : -1; });
+await clickByText("Play the line");
+const p0 = await plyCount();
+await new Promise((r) => setTimeout(r, 3200));
+const p1 = await plyCount();
+step("autoplay advances the walk without clicking", p1 > p0);
+await clickByText("Pause");
+step("pause stops it", (await plyCount()) === (await (async () => { await new Promise((r) => setTimeout(r, 2200)); return plyCount(); })()));
+while (!(await hasText("Try it from memory")) && guard++ < 30) await clickByText("›");
 step("walk reaches the payoff", await hasText("Try it from memory"));
 step("payoff explains the +1", await hasText("Nursing an edge looks exactly like this"));
 
@@ -82,16 +92,18 @@ for (const [f, t] of MOVES) {
 }
 await new Promise((r) => setTimeout(r, 900));
 step("clean try marks the line learned", await hasText("✓ Learned"));
-await clickByText("Learn another line");
+step("passing hands straight to the next line", await page.evaluate(() => [...document.querySelectorAll("button")].some((b) => /▶ Next: [A-Z]{3}·/.test(b.textContent))));
+step("verdict shows queue progress", await hasText("learned"));
+await clickByText("← Back to the list");
 await new Promise((r) => setTimeout(r, 400));
-step("learned counter now 1/36", await hasText("1/36 learned"));
+step("learned counter now 1/41", await hasText("1/41 learned"));
 
 // learn a BLACK line: VSD·1, the anti-London bite (flipped board)
 await clickByText("VSD·1");
 await new Promise((r) => setTimeout(r, 400));
 step("black walk opens", await hasText("walk the line"));
 let g2 = 0;
-while (!(await hasText("Try it from memory")) && g2++ < 20) await clickByText("next move");
+while (!(await hasText("Try it from memory")) && g2++ < 20) await clickByText("›");
 step("black walk reaches payoff", await hasText("Try it from memory"));
 step("payoff explains the London tax", await hasText("the London never changes"));
 await clickByText("Try it from memory");
@@ -103,9 +115,9 @@ for (const [f, t] of BMOVES) {
 }
 await new Promise((r) => setTimeout(r, 900));
 step("black clean try marks learned", await hasText("✓ Learned"));
-await clickByText("Learn another line");
+await clickByText("← Back to the list");
 await new Promise((r) => setTimeout(r, 400));
-step("learned counter now 2/36", await hasText("2/36 learned"));
+step("learned counter now 2/41", await hasText("2/41 learned"));
 
 // the learned lines are in today's practice session
 await clickByText("⚡ Practice");

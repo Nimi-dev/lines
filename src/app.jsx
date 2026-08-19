@@ -3915,7 +3915,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.5·git";
+const APP_VER = "v6.6·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -4703,7 +4703,7 @@ function Gauntlet({ onExit, onLearn }) {
 }
 
 /* ============ LEARN — walk a line with its story, then prove it from memory ============ */
-function LineStudy({ run, onExit }) {
+function LineStudy({ run, onExit, nextRun, onNext, learnedN, totalN }) {
   const pack = PACKS.find((q) => q.id === run.packId) || {};
   const doc = useMemo(() => buildLineDoc(pack, EXTRAS[run.packId] || {}, run, { sq, posKey, START }), [run.sig]);
   const toks = run.toks;
@@ -4716,6 +4716,8 @@ function LineStudy({ run, onExit }) {
   const [miss, setMiss] = useState(0);
   const [slips, setSlips] = useState(0);
   const [msg, setMsg] = useState(null);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
 
   const wPieces = useMemo(() => applyMoves(toks.slice(0, wi)), [wi]);
   const lastW = wi > 0 ? fromTo(toks[wi - 1].split(",")[0]) : null;
@@ -4751,8 +4753,25 @@ function LineStudy({ run, onExit }) {
       else { setMiss(0); setMsg(`It was ${expected.san} — shown. Finish the line, then walk it again or retry.`); setHist((h) => [...h, expected.m]); }
     }
   };
-  const startTry = () => { LEARN.markWalked(run.sig); setHist([]); setSel(null); setMiss(0); setSlips(0); setMsg(null); setMode("try"); };
-  const restartWalk = () => { setWi(0); setMode("walk"); };
+  const startTry = () => { LEARN.markWalked(run.sig); setPlaying(false); setHist([]); setSel(null); setMiss(0); setSlips(0); setMsg(null); setMode("try"); };
+  const restartWalk = () => { setWi(0); setPlaying(false); setMode("walk"); };
+  const step = (to) => { setPlaying(false); setWi(to); };
+
+  // Autoplay dwells on each move for as long as there is to read on it — a bare
+  // "1.e4" should not sit as long as a why-block. Manual stepping stops it.
+  const dwellFor = (pl) => Math.min(3600, 850 + ((pl && pl.note ? pl.note.length : 0) + (pl && pl.why ? 90 : 0)) * 15) / speed;
+  useEffect(() => {
+    if (mode !== "walk" || !playing || atEnd) return;
+    const t = setTimeout(() => setWi((x) => x + 1), wi === 0 ? 420 : dwellFor(cur));
+    return () => clearTimeout(t);
+  }, [mode, playing, wi, atEnd]);
+  useEffect(() => { if (atEnd) setPlaying(false); }, [atEnd]);
+
+  // the board speaks in both phases: walking a line and playing it from memory
+  const sndTok = mode === "walk" ? (wi > 0 ? toks[wi - 1] : null) : (hist.length ? hist[hist.length - 1] : null);
+  const sndPieces = mode === "walk" ? wPieces : tPieces;
+  const sndHist = mode === "walk" ? toks.slice(0, wi) : hist;
+  useMoveSound(sndTok, mode + ":" + (mode === "walk" ? wi : hist.length), sndPieces, toFEN(sndPieces, sndHist, sndHist.length));
 
   const Note = ({ pl }) => (
     <div className="rounded-md p-3 flex flex-col gap-1.5" style={{ background: C.card, border: `1px solid ${C.line}`, minHeight: 64 }}>
@@ -4783,8 +4802,22 @@ function LineStudy({ run, onExit }) {
         {!atEnd ? (<>
           <Note pl={cur} />
           <div className="flex gap-2">
-            <Btn tone="ghost" onClick={() => setWi(Math.max(0, wi - 1))}>‹</Btn>
-            <div className="flex-1"><Btn full onClick={() => setWi(wi + 1)}>{wi === 0 ? "Begin —" : ""} next move ›</Btn></div>
+            <Btn tone="ghost" onClick={() => step(Math.max(0, wi - 1))}>‹</Btn>
+            <div className="flex-1">
+              <Btn full tone={playing ? "ghost" : "gold"} onClick={() => setPlaying(!playing)}>
+                {playing ? "⏸ Pause" : wi === 0 ? "▶ Play the line" : "▶ Play from here"}
+              </Btn>
+            </div>
+            <Btn tone="ghost" onClick={() => step(wi + 1)}>›</Btn>
+            <button onClick={() => setSpeed(speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1)}
+              title="Playback speed"
+              className="px-2 rounded-md"
+              style={{ background: C.card, border: `1px solid ${C.line}`, color: speed === 1 ? C.muted : C.gold, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, minWidth: 42 }}>
+              {speed}×
+            </button>
+          </div>
+          <div style={{ height: 3, background: C.card, borderRadius: 2 }}>
+            <div style={{ width: (wi / toks.length) * 100 + "%", height: 3, background: playing ? C.gold : C.line, borderRadius: 2, transition: "width .35s" }} />
           </div>
         </>) : (<>
           <EvalBar pieces={wPieces} hist={toks} k={wi} />
@@ -4819,7 +4852,20 @@ function LineStudy({ run, onExit }) {
             {run.id} is in your daily gauntlet from today. Learning opened the door — ownership comes from spaced recall there, and only the gauntlet writes memory.
           </p>
         </div>
-        <Btn full onClick={onExit}>← Learn another line</Btn>
+        {typeof learnedN === "number" && (
+          <div className="flex items-center gap-2">
+            <div className="flex-1" style={{ height: 4, background: C.card, borderRadius: 2 }}>
+              <div style={{ width: (learnedN / totalN) * 100 + "%", height: 4, background: C.gold, borderRadius: 2, transition: "width .4s" }} />
+            </div>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>{learnedN}/{totalN} learned</span>
+          </div>
+        )}
+        {nextRun && onNext ? (<>
+          <Btn full onClick={() => onNext(nextRun)}>▶ Next: {nextRun.id} — {nextRun.label.length > 30 ? nextRun.label.slice(0, 30) + "…" : nextRun.label}</Btn>
+          <Btn full tone="ghost" onClick={onExit}>← Back to the list</Btn>
+        </>) : (
+          <Btn full onClick={onExit}>← Learn another line</Btn>
+        )}
       </>)}
 
       {mode === "failed" && (<>
@@ -4830,6 +4876,9 @@ function LineStudy({ run, onExit }) {
         </div>
         <Btn full onClick={startTry}>⟳ Try again</Btn>
         <Btn full tone="ghost" onClick={restartWalk}>↺ Walk it again</Btn>
+        {nextRun && onNext
+          ? <Btn full tone="ghost" onClick={() => onNext(nextRun)}>↷ Park it — next line instead</Btn>
+          : null}
         <Btn full tone="ghost" onClick={onExit}>← Back to the list</Btn>
       </>)}
     </div>
@@ -4845,7 +4894,19 @@ function LearnPage({ onOpenPack }) {
   useEffect(() => { (async () => { try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {} })(); }, []);
   const [study, setStudy] = useState(null);
   const clusters = useMemo(() => buildClusters(PACKS, FULL_TREE, FULL_TREE_B, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS), []);
-  if (study) return <LineStudy key={study.sig} run={study} onExit={() => setStudy(null)} />;
+  if (study) {
+    const ls0 = LEARN.state();
+    const gs0 = GAMESTATS.res();
+    const queue = learnNext(ALL_RUNS, ls0, gs0 && gs0.runProb).filter((r) => r.sig !== study.sig);
+    return (
+      <LineStudy key={study.sig} run={study}
+        onExit={() => setStudy(null)}
+        nextRun={queue[0]}
+        onNext={(r) => setStudy(r)}
+        learnedN={ALL_RUNS.filter((r) => ls0.learned[r.sig]).length}
+        totalN={ALL_RUNS.length} />
+    );
+  }
 
   const GS = GAMESTATS.res();
   const ls = LEARN.state();
