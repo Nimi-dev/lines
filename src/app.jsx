@@ -3087,7 +3087,7 @@ function EdgeCases({ pack, go, switchPack }) {
 /* ============ THE DAILY GAUNTLET — the whole Scotch, shuffled ============ */
 const GKEY = "lines-gauntlet-v1";
 const GKEY2 = "lines-gauntlet-v2";
-const APP_VER = "v6.1 · 2026-08-12";
+const APP_VER = "v6.2·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -3881,3 +3881,6 @@ export default function LinesMock() {
     </div>
   );
 }
+
+/* ---------- test exports (tools/*.mjs) — export-only edit, no behavior change ---------- */
+export { engineCore, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder };
