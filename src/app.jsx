@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { MEM, retrievability, foldResult, owned, seedFromConf } from "./scoring.js";
-import { sanList, analyzeGames, packGains } from "./games.js";
+import { sanList, analyzeGames, scorePct } from "./games.js";
+import { buildLineDoc, buildClusters, runStatus, grandfathered, learnNext, practiceNext } from "./learn.js";
 
 /* ---------- palette ---------- */
 const C = {
@@ -2246,9 +2247,12 @@ const buildTree = (packIds) => {
   return { REP: rep, REPX: repx, RUNS: buildRuns(packIds, repx), packIds };
 };
 const CORE_PACK_IDS = PACKS.filter((p) => p.family === "scotch").map((p) => p.id);
-const LEARNABLE_PACK_IDS = ["petroff", "philidor"]; // shield packs that can join the gauntlet once learned
+const LEARNABLE_PACK_IDS = ["petroff", "philidor"]; // shield packs learnable into the gauntlet
 const DEFAULT_TREE = buildTree(CORE_PACK_IDS);
 const REP = DEFAULT_TREE.REP, REPX = DEFAULT_TREE.REPX, RUNS = DEFAULT_TREE.RUNS;
+/* v6.4: ONE fixed tree everywhere (ids/sigs stable); what varies per user is the
+   LEARNED set — only learned lines enter the daily gauntlet session. */
+const FULL_TREE = buildTree([...CORE_PACK_IDS, ...LEARNABLE_PACK_IDS]);
 
 const dayStr = (d) => {
   const x = d || new Date();
@@ -3269,10 +3273,10 @@ function EdgeCases({ pack, go, switchPack }) {
 const GKEY = "lines-gauntlet-v1";
 const GKEY2 = "lines-gauntlet-v2";
 const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
-const TREEKEY = "lines-tree-v1";   // learned packs added to the gauntlet tree
+const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.3.1·git";
+const APP_VER = "v6.4·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -3295,6 +3299,64 @@ const SAVER = (() => {
     subscribe: (f) => { subs.add(f); return () => subs.delete(f); },
   };
 })();
+/* learned-lines state: which runs have passed the Learn gate (walk + one clean
+   try). Learned admits a line to the gauntlet; it is NOT memory evidence. */
+const LEARNKEY = "lines-learn-v1";
+const LEARN = (() => {
+  let st = { learned: {}, walked: {} };
+  let loaded = false;
+  const subs = new Set();
+  const notify = () => subs.forEach((f) => { try { f(); } catch (e) {} });
+  const save = () => { try { if (STORE) STORE.set(LEARNKEY, JSON.stringify(st)); } catch (e) {} };
+  return {
+    state: () => st,
+    load: async () => {
+      if (loaded) return; loaded = true;
+      try { const r = STORE && (await STORE.get(LEARNKEY)); if (r && r.value) st = { learned: {}, walked: {}, ...JSON.parse(r.value) }; } catch (e) {}
+      notify();
+    },
+    markWalked: (sig) => { if (!st.walked[sig]) { st = { ...st, walked: { ...st.walked, [sig]: Date.now() } }; save(); notify(); } },
+    markLearned: (sig) => { if (!st.learned[sig]) { st = { learned: { ...st.learned, [sig]: Date.now() }, walked: { ...st.walked, [sig]: st.walked[sig] || Date.now() } }; save(); notify(); } },
+    replace: (learned) => { st = { ...st, learned: learned || {} }; save(); notify(); },
+    subscribe: (f) => { subs.add(f); return () => subs.delete(f); },
+  };
+})();
+
+/* shared games analysis: one computation over the cached chess.com games, used
+   by Learn (what next), Practice (what's urgent) and the My Games view. */
+const GAMESTATS = (() => {
+  let res = null, games = null, status = "idle";
+  const subs = new Set();
+  const notify = () => subs.forEach((f) => { try { f(); } catch (e) {} });
+  const compute = () => {
+    if (!games || !games.length) return;
+    res = analyzeGames(FULL_TREE, { sq, posKey, START }, games);
+    const cut = Date.now() - 30 * 86400000;
+    const recent = games.filter((g) => g.white && (g.t || 0) * 1000 >= cut);
+    res.recentWhiteScore = scorePct(recent);
+    res.recentWhiteN = recent.length;
+  };
+  return {
+    res: () => res,
+    status: () => status,
+    load: async () => {
+      if (status !== "idle") return;
+      status = "loading";
+      try {
+        const c = STORE && (await STORE.get(CCCACHE));
+        if (c && c.value) {
+          const d = JSON.parse(c.value);
+          games = Object.values(d.months || {}).flat().map((g) => ({ white: !!g.w, s: g.s, r: g.r, t: g.t, url: g.url }));
+          compute();
+        }
+      } catch (e) {}
+      status = "ready"; notify();
+    },
+    setGames: (recs) => { games = recs.map((g) => ({ white: !!g.w, s: g.s, r: g.r, t: g.t, url: g.url })); compute(); status = "ready"; notify(); },
+    subscribe: (f) => { subs.add(f); return () => subs.delete(f); },
+  };
+})();
+
 /* mastery model v2 — spacing owns the crown, volume earns respect.
    First clean hand-play of a day: c += GAIN_DAY*(1-c) (may cross the proven line).
    Same-day clean repeats: c += GAIN_REP*(1-c), CAPPED at REP_CEIL — volume differentiates
@@ -3414,7 +3476,7 @@ function CalCard({ days, runsN }) {
   );
 }
 
-function Gauntlet({ onExit }) {
+function Gauntlet({ onExit, onLearn }) {
   const [mode, setMode] = useState("home"); // home | run | done
   const [loaded, setLoaded] = useState(false);
   const [days, setDays] = useState({});
@@ -3439,23 +3501,19 @@ function Gauntlet({ onExit }) {
   const [impTxt, setImpTxt] = useState("");
   const [, bumpSave] = useState(0);
   useEffect(() => SAVER.subscribe(() => bumpSave((x) => x + 1)), []);
-  const [learnedPacks, setLearnedPacks] = useState([]);
-  const T = useMemo(() => (learnedPacks.length ? buildTree([...CORE_PACK_IDS, ...learnedPacks]) : DEFAULT_TREE), [learnedPacks]);
-  const togglePack = (id) => setLearnedPacks((L) => {
-    const nl = L.includes(id) ? L.filter((x) => x !== id) : [...L, id];
-    try { if (STORE) STORE.set(TREEKEY, JSON.stringify(nl)); } catch (e) {}
-    return nl;
-  });
+  const T = FULL_TREE;
+  const [, bumpLearn] = useState(0);
+  useEffect(() => LEARN.subscribe(() => bumpLearn((x) => x + 1)), []);
+  const [, bumpGS] = useState(0);
+  useEffect(() => { GAMESTATS.load(); return GAMESTATS.subscribe(() => bumpGS((x) => x + 1)); }, []);
+  const learnedRuns = useMemo(() => T.RUNS.filter((r) => LEARN.state().learned[r.sig]), [LEARN.state()]);
+  const learnedPos = useMemo(() => { const set = new Set(); for (const r of learnedRuns) r.userKeys.forEach((k2) => set.add(k2)); return set; }, [learnedRuns]);
   const shownRef = useRef(Date.now());
 
   // persistence (v2 schema; migrates v1 lifetime stats on first load)
   useEffect(() => {
     (async () => {
       let got = false;
-      try {
-        const rt = STORE && (await STORE.get(TREEKEY));
-        if (rt && rt.value) setLearnedPacks(JSON.parse(rt.value).filter((id) => LEARNABLE_PACK_IDS.includes(id)));
-      } catch (e) {}
       try {
         const r3 = STORE && (await STORE.get(GKEY3));
         if (r3 && r3.value) {
@@ -3471,10 +3529,18 @@ function Gauntlet({ onExit }) {
       } catch (e) {}
       // v6.3 is a deliberate fresh start: v1/v2 saved state is not auto-loaded.
       // Old exports still restore (best-effort seed) through the Restore box.
+      await LEARN.load();
       setLoadInfo(got ? "restored" : "fresh start (v6.3)");
       setLoaded(true);
     })();
   }, []);
+  // grandfather: practice history proves a line — recorded day-plays or full
+  // memory evidence mark it learned without re-walking the Learn flow.
+  useEffect(() => {
+    if (!loaded) return;
+    const st = LEARN.state();
+    for (const r of FULL_TREE.RUNS) if (!st.learned[r.sig] && grandfathered(r, days, conf)) LEARN.markLearned(r.sig);
+  }, [loaded]);
   // checkpoint saves: instant off-run, slow-debounced during a run (storage is rate-limited;
   // a save per board move floods it and later writes fail silently — the original zeroing bug)
   useEffect(() => {
@@ -3484,13 +3550,13 @@ function Gauntlet({ onExit }) {
 
   const today = dayStr();
   const todays = days[today] || { plays: {} };
-  const order = useMemo(() => daySeedOrder(today, T.RUNS.length), [today]);
-  const session = useMemo(() => order.map((ix) => T.RUNS[ix]), [order]);
+  const order = useMemo(() => daySeedOrder(today, learnedRuns.length), [today, learnedRuns.length]);
+  const session = useMemo(() => order.map((ix) => learnedRuns[ix]).filter(Boolean), [order, learnedRuns]);
   const playedN = Object.keys(todays.plays).length;
   const cleanN = session.filter((r) => todays.plays[r.sig] && todays.plays[r.sig].m === 0).length;
   const stumbles = session.filter((r) => { const pl = todays.plays[r.sig]; return pl && pl.m > 0 && !pl.fx; });
   const nextUp = session.find((r) => !todays.plays[r.sig]) || stumbles[0] || null;
-  const redoPhase = playedN >= T.RUNS.length && stumbles.length > 0;
+  const redoPhase = playedN >= session.length && session.length > 0 && stumbles.length > 0;
 
   const cur = curSig ? T.RUNS.find((r) => r.sig === curSig) : null;
   const pieces = useMemo(() => applyMoves(hist), [hist]);
@@ -3656,6 +3722,7 @@ function Gauntlet({ onExit }) {
       runs: runsDict,
       mastery,
       days: daysX,
+      learn: { learned: LEARN.state().learned },
     };
   };
   const doImport = (txt) => {
@@ -3689,6 +3756,7 @@ function Gauntlet({ onExit }) {
         setConf(nc); setDays(nd); setHit(nh); setMissedPos(nm);
         const lt = (d.meta || {}).lifetime || {};
         setLifeRuns(lt.runs || 0); setLifeClean(lt.clean || 0);
+        if (d.learn && d.learn.learned) LEARN.replace(d.learn.learned);
         return `restored ${Object.keys(nc).length} positions across ${Object.keys(nd).length} day(s) — saving now.`;
       }
       return "unrecognized format — paste a full training-log export.";
@@ -3718,17 +3786,17 @@ function Gauntlet({ onExit }) {
         Same tree. Fresh order. Every day.
       </h2>
       <p style={{ fontSize: 14.5, lineHeight: 1.6, color: C.cream, margin: 0 }}>
-        All {T.RUNS.length} runs in today’s order. Whatever the model predicts you still remember fast-forwards — knowledge is acknowledged at the speed it’s demonstrated, and only time decays it. A payoff move is always yours. Misses wait at the end; a crack in owned ground is the flag that matters.
+        {session.length ? `All ${session.length} learned runs in today’s order. ` : ""}Whatever the model predicts you still remember fast-forwards — knowledge is acknowledged at the speed it’s demonstrated, and only time decays it. A payoff move is always yours. Misses wait at the end; a crack in owned ground is the flag that matters. New lines join here the moment you learn them.
       </p>
-      <CalCard days={days} runsN={T.RUNS.length} />
+      <CalCard days={days} runsN={session.length} />
       {(() => {
         const ti = dayInfo(days, today);
         return (
           <div className="flex gap-2 flex-wrap">
-            <Stat label="TODAY" val={`${playedN}/${T.RUNS.length}`} />
+            <Stat label="TODAY" val={`${playedN}/${session.length}`} />
             <Stat label="FIRST-TRY" val={ti ? `${ti.acc}%` : "—"} />
             <Stat label="MISSES" val={ti ? ti.m : "—"} />
-            <Stat label="OWNED" val={`${Object.keys(conf).filter((k2) => owned(conf[k2], Date.now())).length}/${T.REP.totalUser}`} />
+            <Stat label="OWNED" val={`${Object.keys(conf).filter((k2) => learnedPos.has(k2) && owned(conf[k2], Date.now())).length}/${learnedPos.size}`} />
           </div>
         );
       })()}
@@ -3736,9 +3804,16 @@ function Gauntlet({ onExit }) {
         <Btn full onClick={() => startRun(nextUp.sig)}>
           {redoPhase ? `↺ Redo ${nextUp.id} — hunt the miss →` : `Play ${nextUp.id} →`}
         </Btn>
-      ) : playedN >= T.RUNS.length ? (
+      ) : session.length === 0 ? (
+        <div className="rounded-md p-4 flex flex-col gap-3" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+          <p style={{ fontSize: 13.5, color: C.cream, margin: 0, lineHeight: 1.6 }}>
+            Nothing in the gauntlet yet — lines join it by being learned. Walk a line, pass one clean try, and it appears here the same day.
+          </p>
+          {onLearn && <Btn full onClick={onLearn}>📖 Go learn your first line →</Btn>}
+        </div>
+      ) : playedN >= session.length ? (
         <div className="rounded-md p-4 text-center" style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, fontFamily: "'Fraunces', serif", fontSize: 18, color: C.gold }}>
-          {"✦"} Day complete {cleanN >= T.RUNS.length ? "— immaculate." : "— every stumble avenged."}
+          {"✦"} Day complete {cleanN >= session.length ? "— immaculate." : "— every stumble avenged."}
         </div>
       ) : null}
       {(todays.cracks || []).length > 0 && (
@@ -3771,36 +3846,47 @@ function Gauntlet({ onExit }) {
           );
         })}
       </div>
-      <div className="rounded-md p-3 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
-        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.1em", color: C.muted }}>YOUR TREE · {T.RUNS.length} runs · {T.REP.totalUser} positions</div>
-        {LEARNABLE_PACK_IDS.map((id) => {
-          const pk = PACKS.find((p) => p.id === id) || {};
-          const on = learnedPacks.includes(id);
-          return (
-            <button key={id} onClick={() => togglePack(id)} className="flex items-center justify-between rounded-md px-3 py-2 w-full"
-              style={{ background: on ? C.goldSoft : "transparent", border: `1px solid ${on ? C.gold + "66" : C.line}`, color: on ? C.gold : C.muted, fontSize: 12.5, cursor: "pointer" }}>
-              <span>{pk.chip}</span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10 }}>{on ? "IN THE GAUNTLET ✓" : "＋ add to gauntlet"}</span>
-            </button>
-          );
-        })}
-        <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8, lineHeight: 1.5 }}>
-          Learn a pack in its own room first, then add it here — its runs join the daily gauntlet and its positions start cold. The Scotch core is always in.
-        </div>
-      </div>
+      {(() => {
+        const GS = GAMESTATS.res();
+        if (!GS) return null;
+        const pn = practiceNext(T.RUNS, LEARN.state(), conf, retrievability, GS.runProb, Date.now()).slice(0, 3);
+        const recentMisses = GS.misses.filter((m) => m.recent > 0).slice(0, 2);
+        return (
+          <div className="rounded-md p-3 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.1em", color: C.muted }}>FROM YOUR GAMES · practice intel</div>
+            {GS.recentWhiteScore != null && (
+              <div style={{ fontSize: 12.5, color: C.cream }}>
+                White score, last 30 days: <b style={{ color: GS.recentWhiteScore >= 80 ? C.gold : C.cream }}>{GS.recentWhiteScore}%</b>
+                <span style={{ color: C.muted }}> ({GS.recentWhiteN} games) · goal 80%</span>
+              </div>
+            )}
+            {pn.map((r) => (
+              <div key={r.sig} style={{ fontSize: 12, color: C.cream, opacity: 0.9 }}>
+                <span style={{ color: C.gold, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{r.id}</span>
+                {" "}— ≈{(100 * (GS.runProb[r.sig] || 0)).toFixed(1)}% of your games{(() => { const rm = r.userKeys.length ? Math.min(...r.userKeys.map((k2) => retrievability(conf[k2], Date.now()))) : 0; return rm < MEM.OWN ? " · fading" : ""; })()}
+              </div>
+            ))}
+            {recentMisses.map((m, i) => (
+              <div key={i} style={{ fontSize: 11.5, color: C.red }}>
+                real-game slip: expected <b>{m.expected}</b> — {m.recent}× in the last 30 days
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       {(() => {
         const nowB = Date.now();
-        const ks = Object.keys(conf);
+        const ks = Object.keys(conf).filter((k2) => learnedPos.has(k2));
         const pv = ks.filter((k2) => owned(conf[k2], nowB)).length;
         const lr = ks.length - pv;
         return (
           <div className="flex flex-col gap-1">
             <div className="rounded-md flex" style={{ background: C.card, height: 8, overflow: "hidden" }}>
-              <div style={{ width: `${T.REP.totalUser ? (100 * pv) / T.REP.totalUser : 0}%`, background: C.gold, transition: "width .4s" }} />
-              <div style={{ width: `${T.REP.totalUser ? (100 * lr) / T.REP.totalUser : 0}%`, background: C.gold, opacity: 0.35, transition: "width .4s" }} />
+              <div style={{ width: `${learnedPos.size ? (100 * pv) / learnedPos.size : 0}%`, background: C.gold, transition: "width .4s" }} />
+              <div style={{ width: `${learnedPos.size ? (100 * lr) / learnedPos.size : 0}%`, background: C.gold, opacity: 0.35, transition: "width .4s" }} />
             </div>
             <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, color: C.muted, opacity: 0.8 }}>
-              memory · ✦ owned {pv} · ◐ fading or learning {lr} · ○ untested {Math.max(0, T.REP.totalUser - ks.length)} — owned positions fast-forward until decay reclaims them
+              memory · ✦ owned {pv} · ◐ fading or learning {lr} · ○ untested {Math.max(0, learnedPos.size - ks.length)} — owned positions fast-forward until decay reclaims them
             </div>
           </div>
         );
@@ -3966,44 +4052,228 @@ function Gauntlet({ onExit }) {
   );
 }
 
+/* ============ LEARN — walk a line with its story, then prove it from memory ============ */
+function LineStudy({ run, onExit }) {
+  const pack = PACKS.find((q) => q.id === run.packId) || {};
+  const doc = useMemo(() => buildLineDoc(pack, EXTRAS[run.packId] || {}, run, { sq, posKey, START }), [run.sig]);
+  const toks = run.toks;
+  const [mode, setMode] = useState("walk"); // walk | try | passed | failed
+  const [wi, setWi] = useState(0);
+  const [hist, setHist] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [miss, setMiss] = useState(0);
+  const [slips, setSlips] = useState(0);
+  const [msg, setMsg] = useState(null);
+
+  const wPieces = useMemo(() => applyMoves(toks.slice(0, wi)), [wi]);
+  const lastW = wi > 0 ? fromTo(toks[wi - 1].split(",")[0]) : null;
+  const cur = wi > 0 ? doc.plies[wi - 1] : null;
+  const atEnd = wi >= toks.length;
+
+  const k = hist.length;
+  const tPieces = useMemo(() => applyMoves(hist), [hist]);
+  const expected = mode === "try" && k % 2 === 0 && k < toks.length ? { m: toks[k], san: doc.plies[k].san } : null;
+  const expFT = expected ? fromTo(expected.m) : null;
+
+  useEffect(() => {
+    if (mode !== "try") return;
+    if (k >= toks.length) {
+      const t = setTimeout(() => { if (slips === 0) { LEARN.markLearned(run.sig); setMode("passed"); } else setMode("failed"); }, 600);
+      return () => clearTimeout(t);
+    }
+    if (k % 2 === 1) { const t = setTimeout(() => { setHist((h) => [...h, toks[k]]); setMsg(null); }, 480); return () => clearTimeout(t); }
+  }, [mode, k]);
+
+  const onTap = (name) => {
+    if (!expected) return;
+    const pc = tPieces[sq(name)];
+    if (!sel) { if (pc && pc === pc.toUpperCase()) setSel(name); return; }
+    if (sel === name) { setSel(null); return; }
+    if (pc && pc === pc.toUpperCase()) { setSel(name); return; }
+    if (sel + name === expFT[0] + expFT[1]) {
+      setHist((h) => [...h, expected.m]); setSel(null); setMiss(0); setMsg(null);
+    } else {
+      setSel(null);
+      if (miss === 0) { setMiss(1); setSlips((x) => x + 1); setMsg("Not that one — the mover is marked. Find its square yourself."); }
+      else { setMiss(0); setMsg(`It was ${expected.san} — shown. Finish the line, then walk it again or retry.`); setHist((h) => [...h, expected.m]); }
+    }
+  };
+  const startTry = () => { LEARN.markWalked(run.sig); setHist([]); setSel(null); setMiss(0); setSlips(0); setMsg(null); setMode("try"); };
+  const restartWalk = () => { setWi(0); setMode("walk"); };
+
+  const Note = ({ pl }) => (
+    <div className="rounded-md p-3 flex flex-col gap-1.5" style={{ background: C.card, border: `1px solid ${C.line}`, minHeight: 64 }}>
+      <div className="flex items-baseline justify-between">
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, color: pl && wi % 2 === 1 ? C.gold : C.cream }}>{pl ? pl.san : "—"}</span>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: C.muted }}>{wi}/{toks.length}</span>
+      </div>
+      {pl && pl.note ? <p style={{ fontSize: 12.5, color: C.cream, opacity: 0.9, lineHeight: 1.55, margin: 0 }}>{pl.note}</p> : null}
+      {pl && pl.why ? (
+        <div className="rounded p-2" style={{ background: C.goldSoft }}>
+          <p style={{ fontSize: 11.5, color: C.gold, fontStyle: "italic", margin: 0 }}>{pl.why.q}</p>
+          <p style={{ fontSize: 11.5, color: C.cream, opacity: 0.9, margin: "4px 0 0 0", lineHeight: 1.5 }}>{pl.why.a}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3 px-5 pb-8">
+      <div className="flex items-center justify-between">
+        <Eyebrow>{run.glyph} {run.id} · {mode === "walk" ? "walk the line" : mode === "try" ? "from memory" : "the verdict"}</Eyebrow>
+        <button onClick={onExit} style={{ background: "transparent", border: "none", color: C.muted, fontSize: 13, cursor: "pointer" }}>✕</button>
+      </div>
+      <div style={{ fontSize: 12.5, color: C.muted }}>{run.label}</div>
+
+      {mode === "walk" && (<>
+        <Board pieces={wPieces} last={lastW} frame="goldsoft" />
+        {!atEnd ? (<>
+          <Note pl={cur} />
+          <div className="flex gap-2">
+            <Btn tone="ghost" onClick={() => setWi(Math.max(0, wi - 1))}>‹</Btn>
+            <div className="flex-1"><Btn full onClick={() => setWi(wi + 1)}>{wi === 0 ? "Begin —" : ""} next move ›</Btn></div>
+          </div>
+        </>) : (<>
+          <EvalBar pieces={wPieces} hist={toks} k={wi} />
+          <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.goldSoft, border: `1px solid ${C.gold}66` }}>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: C.gold }}>{doc.payoff.title}</div>
+            <p style={{ fontSize: 13, color: C.cream, lineHeight: 1.6, margin: 0 }}>{doc.payoff.text}</p>
+          </div>
+          <Btn full onClick={startTry}>▶ Try it from memory</Btn>
+          <Btn full tone="ghost" onClick={restartWalk}>↺ Walk it again</Btn>
+        </>)}
+      </>)}
+
+      {mode === "try" && (<>
+        <div className="flex items-center justify-between">
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: slips ? C.red : C.muted }}>{slips ? `${slips} slip${slips > 1 ? "s" : ""}` : "clean so far"}</span>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: C.muted }}>{Math.min(k, toks.length)}/{toks.length}</span>
+        </div>
+        <Board pieces={tPieces} last={hist.length ? fromTo(hist[hist.length - 1].split(",")[0]) : null} sel={sel}
+          fen={toFEN(tPieces, hist, k)}
+          marks={miss === 1 && expFT ? [expFT[0]] : []} onTap={onTap} frame={null} />
+        <div className="rounded-md px-3 py-2.5 text-center" style={{ background: C.card, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: k % 2 === 0 ? C.gold : C.muted }}>
+          {k >= toks.length ? "line complete…" : k % 2 === 0 ? "your move — from memory" : "he replies…"}
+        </div>
+        {msg && <p style={{ fontSize: 12, color: C.red, fontFamily: "'IBM Plex Mono', monospace", margin: 0 }}>{msg}</p>}
+      </>)}
+
+      {mode === "passed" && (<>
+        <Board pieces={tPieces} last={null} frame="gold" />
+        <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.goldSoft, border: `1px solid ${C.gold}` }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: C.gold }}>✓ Learned.</div>
+          <p style={{ fontSize: 13, color: C.cream, lineHeight: 1.6, margin: 0 }}>
+            {run.id} is in your daily gauntlet from today. Learning opened the door — ownership comes from spaced recall there, and only the gauntlet writes memory.
+          </p>
+        </div>
+        <Btn full onClick={onExit}>← Learn another line</Btn>
+      </>)}
+
+      {mode === "failed" && (<>
+        <Board pieces={tPieces} last={null} frame="red" />
+        <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.redSoft, border: `1px solid ${C.red}88` }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: C.red }}>{slips} slip{slips > 1 ? "s" : ""} — not yet.</div>
+          <p style={{ fontSize: 13, color: C.cream, lineHeight: 1.6, margin: 0 }}>A line is learned by one clean pass. Slips here cost nothing — they never touch your memory record.</p>
+        </div>
+        <Btn full onClick={startTry}>⟳ Try again</Btn>
+        <Btn full tone="ghost" onClick={restartWalk}>↺ Walk it again</Btn>
+        <Btn full tone="ghost" onClick={onExit}>← Back to the list</Btn>
+      </>)}
+    </div>
+  );
+}
+
+function LearnPage({ onOpenPack }) {
+  const [, bump] = useState(0);
+  useEffect(() => { LEARN.load(); return LEARN.subscribe(() => bump((x) => x + 1)); }, []);
+  const [, bumpG] = useState(0);
+  useEffect(() => { GAMESTATS.load(); return GAMESTATS.subscribe(() => bumpG((x) => x + 1)); }, []);
+  const [mem, setMem] = useState({});
+  useEffect(() => { (async () => { try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {} })(); }, []);
+  const [study, setStudy] = useState(null);
+  const clusters = useMemo(() => buildClusters(PACKS, FULL_TREE, CORE_PACK_IDS, LEARNABLE_PACK_IDS), []);
+  if (study) return <LineStudy key={study.sig} run={study} onExit={() => setStudy(null)} />;
+
+  const GS = GAMESTATS.res();
+  const ls = LEARN.state();
+  const now = Date.now();
+  const next = learnNext(FULL_TREE.RUNS, ls, GS && GS.runProb)[0];
+  const learnedN = FULL_TREE.RUNS.filter((r) => ls.learned[r.sig]).length;
+  const groups = [...new Set(clusters.white.map((c) => c.group))];
+
+  return (
+    <div className="flex flex-col gap-4 px-5 pb-8">
+      <Eyebrow>📖 Learn — the tree, one line at a time</Eyebrow>
+      <p style={{ fontSize: 13.5, color: C.cream, lineHeight: 1.6, margin: 0 }}>
+        Every line is numbered like the gauntlet. Walk it with its story, see why the end position is your +1, then play it once from memory — clean pass and it joins today’s practice. {learnedN}/{FULL_TREE.RUNS.length} learned.
+      </p>
+      {next && (
+        <button onClick={() => setStudy(next)} className="rounded-md px-4 py-3 text-left"
+          style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>
+          ▶ Next: {next.id} — {next.label}
+          {GS && GS.runProb[next.sig] ? <span style={{ fontWeight: 400, color: C.muted }}> · ≈{(100 * GS.runProb[next.sig]).toFixed(1)}% of your games</span> : null}
+        </button>
+      )}
+      {groups.map((grp) => (
+        <div key={grp} className="flex flex-col gap-2">
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.14em", color: C.gold, opacity: 0.9 }}>♔ WHITE · {grp.toUpperCase()}</div>
+          {clusters.white.filter((c) => c.group === grp).map((cl) => {
+            const done = cl.runs.filter((r) => ls.learned[r.sig]).length;
+            return (
+              <div key={cl.id} className="rounded-md p-3 flex flex-col gap-1.5" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+                <div className="flex items-baseline justify-between">
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: C.cream }}>{cl.chip}</span>
+                  <span className="flex items-baseline gap-2">
+                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: done === cl.runs.length ? C.gold : C.muted }}>{done}/{cl.runs.length}</span>
+                    <button onClick={() => onOpenPack(cl.id)} style={{ background: "transparent", border: "none", color: C.muted, fontSize: 10.5, cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>story ↗</button>
+                  </span>
+                </div>
+                {cl.runs.map((r) => {
+                  const st = runStatus(r, ls, mem, retrievability, owned, now);
+                  const glyph = st.learned ? "✓" : st.walked ? "◐" : "○";
+                  return (
+                    <button key={r.sig} onClick={() => setStudy(r)} className="flex items-center gap-2 rounded px-2 py-1.5 text-left w-full"
+                      style={{ background: "transparent", border: `1px solid ${st.learned ? C.gold + "33" : C.line}`, cursor: "pointer" }}>
+                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: st.learned ? C.gold : C.muted, width: 14 }}>{glyph}</span>
+                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.gold, whiteSpace: "nowrap" }}>{r.id}</span>
+                      <span className="flex-1" style={{ fontSize: 12, color: C.cream, opacity: 0.85, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</span>
+                      {st.learned && <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: st.ownedN === st.total ? C.gold : C.muted }}>✦{st.ownedN}/{st.total}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      <div className="flex flex-col gap-2">
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.14em", color: C.muted }}>♚ BLACK</div>
+        <div className="rounded-md p-3" style={{ background: C.card, border: `1px solid ${C.line}` }}>
+          <p style={{ fontSize: 12, color: C.muted, margin: 0, lineHeight: 1.5 }}>No Black lines yet — the Black repertoire arrives as a brief from the design chat and will slot in here.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============ MY GAMES — coverage, leaks, and what to learn, from real chess.com games ============ */
 function GamesPanel({ onExit }) {
   const [user, setUser] = useState("");
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState(null);
-  const [gains, setGains] = useState([]);
-  const [learned, setLearned] = useState([]);
   const [mem, setMem] = useState({});
-  const [gameCount, setGameCount] = useState(0);
-
+  const [, bump] = useState(0);
+  useEffect(() => { GAMESTATS.load(); return GAMESTATS.subscribe(() => bump((x) => x + 1)); }, []);
+  const [, bumpL] = useState(0);
+  useEffect(() => { LEARN.load(); return LEARN.subscribe(() => bumpL((x) => x + 1)); }, []);
   useEffect(() => {
     (async () => {
       try { const u = STORE && (await STORE.get(CCUSER)); if (u && u.value) setUser(u.value); } catch (e) {}
-      let lp = [];
-      try { const t = STORE && (await STORE.get(TREEKEY)); if (t && t.value) { lp = JSON.parse(t.value); setLearned(lp); } } catch (e) {}
       try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {}
-      try {
-        const c = STORE && (await STORE.get(CCCACHE));
-        if (c && c.value) { const d = JSON.parse(c.value); if (d.user) analyze(Object.values(d.months || {}).flat(), treeFor(lp)); }
-      } catch (e) {}
     })();
   }, []);
 
-  const treeFor = (lp) => (lp.length ? buildTree([...CORE_PACK_IDS, ...lp.filter((id) => LEARNABLE_PACK_IDS.includes(id))]) : DEFAULT_TREE);
-  const currentTree = useMemo(() => treeFor(learned), [learned]);
-
-  const analyze = (recs, treeOverride) => {
-    const games = recs.map((g) => ({ white: !!g.w, s: g.s, r: g.r, t: g.t, url: g.url }));
-    const tree = treeOverride || currentTree;
-    const r = analyzeGames(tree, { sq, posKey, START }, games);
-    const inTree = tree.packIds;
-    const cands = LEARNABLE_PACK_IDS.filter((id) => !inTree.includes(id))
-      .map((id) => ({ id, tree: buildTree([...inTree, id]) }));
-    setGains(packGains(tree, cands, r.leaks));
-    setRes(r); setGameCount(games.filter((g) => g.white).length);
-    setStatus(null);
-  };
+  const res = GAMESTATS.res();
 
   const fetchGames = async () => {
     const u = user.trim().toLowerCase();
@@ -4036,14 +4306,14 @@ function GamesPanel({ onExit }) {
         out.push(...recs);
       }
       try { if (STORE) await STORE.set(CCCACHE, JSON.stringify(cache)); } catch (e) {}
-      analyze(out);
+      GAMESTATS.setGames(out);
+      setStatus(null);
     } catch (e) { setStatus("fetch failed — check the username and your connection"); }
     setBusy(false);
   };
 
-  const chipOf = (id) => (PACKS.find((p) => p.id === id) || {}).chip || id;
-  const coveredBy = (leak) => { const g = gains.find((x) => x.covers.includes(leak.move) && x.n >= leak.n); return g ? g.id : null; };
   const moveNoOf = (ply) => Math.floor(ply / 2) + 1;
+  const learnQueue = res ? learnNext(FULL_TREE.RUNS, LEARN.state(), res.runProb).slice(0, 3) : [];
   const Card = ({ title, children }) => (
     <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
       <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: C.muted }}>{title}</div>
@@ -4064,43 +4334,46 @@ function GamesPanel({ onExit }) {
       </div>
       {status && <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, margin: 0 }}>{status}</p>}
       {res && (<>
+        <Card title={`GOAL · White, last 30 days (${res.recentWhiteN || 0} games)`}>
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 34, color: (res.recentWhiteScore || 0) >= 80 ? C.gold : C.cream, lineHeight: 1 }}>{res.recentWhiteScore == null ? "—" : res.recentWhiteScore + "%"}</span>
+            <span style={{ fontSize: 12, color: C.muted }}>→ converge on 80%. The mechanism: a +1 you understand out of every opening, then the game is yours to take.</span>
+          </div>
+        </Card>
         <Card title={`COVERAGE · from ${res.totals.e4} rapid games as White`}>
           <div className="flex items-baseline gap-3">
             <span style={{ fontFamily: "'Fraunces', serif", fontSize: 40, color: C.gold, lineHeight: 1 }}>{Math.round(100 * res.coverage)}%</span>
-            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85, lineHeight: 1.45 }}>of your 1.e4 games would run inside your current tree to a line’s end, if you play your moves — estimated node-by-node from your own opponents.</span>
+            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85, lineHeight: 1.45 }}>of your 1.e4 games stay inside the tree through your first six moves — the zone where the +1 gets banked.</span>
           </div>
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
-            observed endings: {res.totals.done} ran a full line · {res.totals.opp} opponent left · {res.totals.user} you left first
+            by depth: move 3 · {Math.round(100 * res.coverageCurve[6])}% — move 4 · {Math.round(100 * res.coverageCurve[8])}% — move 5 · {Math.round(100 * res.coverageCurve[10])}% — full line · {(100 * res.coverageCurve.full).toFixed(1)}%
           </div>
-          {gains.length > 0 && (
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
+            endings observed: {res.totals.done} full line · {res.totals.opp} opponent left · {res.totals.user} you left first
+          </div>
+          {learnQueue.length > 0 && (
             <div className="flex flex-col gap-1 pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
-              {gains.map((g) => (
-                <div key={g.id} style={{ fontSize: 12.5, color: C.gold }}>
-                  ＋ {chipOf(g.id)} would absorb <b>{g.n}</b> of these games ({Math.round((100 * g.n) / Math.max(1, res.totals.e4))}%) — learn it, then add it on the Daily page.
+              {learnQueue.map((r) => (
+                <div key={r.sig} style={{ fontSize: 12.5, color: C.gold }}>
+                  📖 learn next: <b>{r.id}</b> — ≈{(100 * (res.runProb[r.sig] || 0)).toFixed(1)}% of your games
                 </div>
               ))}
             </div>
           )}
         </Card>
         <Card title="TOP LEAKS · where opponents leave your tree">
-          {res.leaks.slice(0, 8).map((L, i) => {
-            const cb = coveredBy(L);
-            return (
-              <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
-                <span style={{ color: C.cream }}>
-                  {moveNoOf(L.ply)}… <b>{L.move}</b>
-                  {cb ? <span style={{ color: C.gold }}> · {chipOf(cb)} covers this</span> : null}
-                </span>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: L.score != null && L.score < 45 ? C.red : C.muted, whiteSpace: "nowrap" }}>
-                  {L.n}× · you score {L.score == null ? "—" : L.score + "%"}
-                </span>
-              </div>
-            );
-          })}
-          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>ranked by frequency × score deficit — a common line you already beat is not a priority.</div>
+          {res.leaks.slice(0, 8).map((L, i) => (
+            <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
+              <span style={{ color: C.cream }}>{moveNoOf(L.ply)}… <b>{L.move}</b></span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: L.score != null && L.score < 45 ? C.red : C.muted, whiteSpace: "nowrap" }}>
+                {L.n}× · you score {L.score == null ? "—" : L.score + "%"}
+              </span>
+            </div>
+          ))}
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>ranked by frequency × score deficit. Uncovered branches you keep meeting are candidates for new lines — they arrive as briefs, not improvisations.</div>
         </Card>
         <Card title="YOUR MISSES · tree positions where you left book first">
-          {res.misses.length === 0 && <div style={{ fontSize: 12.5, color: C.cream }}>None — every deviation was your opponent’s. Keep it that way.</div>}
+          {res.misses.length === 0 && <div style={{ fontSize: 12.5, color: C.cream }}>None — every deviation was your opponent’s.</div>}
           {res.misses.slice(0, 8).map((m, i) => {
             const rec = mem[m.key];
             const R = retrievability(rec, Date.now());
@@ -4115,7 +4388,7 @@ function GamesPanel({ onExit }) {
             );
           })}
           <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>
-            “recent” = last 30 days. Old misses are mostly pre-training habits; recent misses on trained ground are the real flags — drill those runs today.
+            “recent” = last 30 days. Old misses are pre-training habit; a recent miss on trained ground is the flag — its runs are ranked for you on the Practice page.
           </div>
         </Card>
         <Card title="RESULTS BY BUCKET">
@@ -4124,12 +4397,12 @@ function GamesPanel({ onExit }) {
             opponent left tree: {res.totals.opp} · score {res.scores.opp == null ? "—" : res.scores.opp + "%"}<br />
             you left first: {res.totals.user} · score {res.scores.user == null ? "—" : res.scores.user + "%"}
           </div>
-          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>the value proposition, measured: the gap between “line completed” and the rest is what the tree is worth per game.</div>
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>the value proposition, measured: the gap between “in book” and “you left first” is what the tree is worth per game.</div>
         </Card>
       </>)}
       {!res && !busy && (
         <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.6 }}>
-          Fetches your public chess.com rapid games (straight from your device — nothing leaves it except the chess.com request), walks every 1.e4 game against your tree, and reports: how much of your real opposition your lines cover, where the leaks are, which pack would plug them, and where YOU left book first.
+          Fetches your public chess.com rapid games (straight from your device — nothing leaves it except the chess.com request), walks every 1.e4 game against your tree, and reports coverage by depth, the leaks, what to learn next, and where you left book first.
         </p>
       )}
       <Btn full tone="ghost" onClick={onExit}>{"←"} Back</Btn>
@@ -4138,7 +4411,7 @@ function GamesPanel({ onExit }) {
 }
 
 export default function LinesMock() {
-  const [view, setView] = useState("packs");
+  const [view, setView] = useState("learn");
   const [packId, setPackId] = useState("mieses");
   const [fam, setFam] = useState("scotch");
   const [tab, setTab] = useState("end");
@@ -4163,17 +4436,21 @@ export default function LinesMock() {
         <header className="px-5 pt-5 pb-3 flex flex-col gap-3">
           <div className="flex items-baseline justify-between">
             <div style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 22 }}>lines</div>
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, letterSpacing: "0.08em" }}>{view === "daily" ? "⚡ DAILY GAUNTLET" : view === "games" ? "♟ MY GAMES · COVERAGE" : pack.badge}</div>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, letterSpacing: "0.08em" }}>{view === "daily" ? "⚡ PRACTICE" : view === "games" ? "♟ MY GAMES" : view === "learn" ? "📖 LEARN" : pack.badge}</div>
+          </div>
+          <div className="flex rounded-md" style={{ background: C.card, border: `1px solid ${C.line}`, overflow: "hidden" }}>
+            {[["learn", "📖 Learn"], ["daily", "⚡ Practice"], ["games", "♟ Games"]].map(([id, label]) => (
+              <button key={id} onClick={() => setView(id)} className="flex-1 py-2.5"
+                style={{
+                  background: view === id || (id === "learn" && view === "packs") ? C.goldSoft : "transparent",
+                  color: view === id || (id === "learn" && view === "packs") ? C.gold : C.muted,
+                  border: "none", fontSize: 13, fontWeight: view === id ? 700 : 500, cursor: "pointer",
+                }}>
+                {label}
+              </button>
+            ))}
           </div>
           {view === "packs" && (<>
-          <button onClick={() => setView("daily")} className="rounded-md px-4 py-2.5 text-left"
-            style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, fontSize: 13.5, fontWeight: 600 }}>
-            ⚡ Daily gauntlet — your whole tree, shuffled →
-          </button>
-          <button onClick={() => setView("games")} className="rounded-md px-4 py-2.5 text-left"
-            style={{ background: "transparent", border: `1px solid ${C.line}`, color: C.cream, fontSize: 13, fontWeight: 500 }}>
-            ♟ My games — coverage, leaks, what to learn →
-          </button>
           <div className="flex flex-col gap-1">
             {[true, false].map((rep) => (
               <div key={String(rep)} className="flex gap-2 overflow-x-auto items-center" style={{ scrollbarWidth: "none" }}>
@@ -4222,8 +4499,9 @@ export default function LinesMock() {
           </>)}
         </header>
         <main className="flex-1 pb-28 pt-2" style={{ paddingLeft: view === "packs" ? 20 : 0, paddingRight: view === "packs" ? 20 : 0 }}>
-          {view === "daily" && <Gauntlet onExit={() => setView("packs")} />}
-          {view === "games" && <GamesPanel onExit={() => setView("packs")} />}
+          {view === "learn" && <LearnPage onOpenPack={(id) => { switchPack(id); setView("packs"); }} />}
+          {view === "daily" && <Gauntlet onExit={() => setView("learn")} onLearn={() => setView("learn")} />}
+          {view === "games" && <GamesPanel onExit={() => setView("learn")} />}
           {view === "packs" && tab === "end" && <EndScreen key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "learn" && <LearnFlow key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "edge" && <EdgeCases key={packId} pack={pack} go={setTab} switchPack={switchPack} />}

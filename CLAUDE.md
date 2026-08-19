@@ -105,6 +105,15 @@ A proposal without its failure analysis attached is incomplete by definition.
 - Sessions must stay time-efficient: target users are strong players who may
   already know lines. The app acknowledges demonstrated knowledge at the
   speed it is demonstrated; time is only for decay.
+- **Learned ≠ owned** (v6.4). "Learned" is a one-time gate per line — walk it
+  with its story, then one clean try from memory — that admits the line to the
+  daily gauntlet. It writes NO memory evidence: misses while learning are
+  expected and must never count as recall failures; only gauntlet hand-plays
+  fold into the v6.3 memory model. Practice history grandfathers a line
+  (recorded day-plays, or full memory evidence across its positions). The
+  learn/practice queues are ranked by runProb — each line's real-world
+  frequency measured from the user's own chess.com games — so learning order
+  follows what actually gets played at the user's level.
 - Chess content answers to two machine gates: SEE audit (tools/see-audit.mjs,
   in CI) and the deep engine audit (tools/line-audit.mjs --cloud, run on any
   content change — it caught 10.Qe4?, which the shallow engine cleared).
