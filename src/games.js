@@ -249,3 +249,88 @@ export const packGains = (currentTree, candidateTrees, leaks) => {
     return { id, n, covers };
   }).filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
 };
+
+/* ---- v6.8 evaluation page machinery ---- */
+
+/* the learned subtree as a walkable rep: only positions/moves along runs the
+   user has actually learned. Corpus-vs-learned walks give different break
+   points — one gap is fixed by learning, the other by authoring. */
+export const buildLearnedRep = (runs, learnedSigs, helpers) => {
+  const { sq, posKey, START } = helpers;
+  const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
+  const user = {}, opp = {};
+  for (const r of runs) {
+    if (!learnedSigs[r.sig]) continue;
+    const userPly = r.side === "black" ? 1 : 0;
+    let b = START.slice();
+    for (let k = 0; k < r.toks.length; k++) {
+      const key = posKey(b, k % 2);
+      if (k % 2 === userPly) user[key] = { m: r.toks[k], san: r.sans[k] || "" };
+      else {
+        const e = (opp[key] = opp[key] || []);
+        if (!e.some((x) => x.m === r.toks[k])) e.push({ m: r.toks[k], san: r.sans[k] || "" });
+      }
+      b = applyTok(b, r.toks[k]);
+    }
+  }
+  return { user, opp };
+};
+
+/* walk one game against a rep, returning the break with enough state to EVAL
+   the last in-book position: its board, applied tree tokens (for castling
+   rights in the FEN), ply, kind (user|opp|done), and the moves involved.
+   kind "done": the book outlived the game or the line completed. */
+export const walkBreak = (rep, helpers, sans, userPly = 0) => {
+  const { sq, posKey, START } = helpers;
+  const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
+  let b = START.slice(), k = 0;
+  const hist = [];
+  while (k < sans.length) {
+    const key = posKey(b, k % 2);
+    const gs = clean(sans[k]);
+    if (k % 2 === userPly) {
+      const u = rep.user[key];
+      if (!u) return { kind: "out", ply: k, key, board: b, hist };
+      if (clean(u.san) !== gs) return { kind: "user", ply: k, key, board: b, hist, expected: u.san, played: sans[k] };
+      b = applyTok(b, u.m); hist.push(u.m);
+    } else {
+      const entry = rep.opp[key] || [];
+      if (!entry.length) return { kind: "out", ply: k, key, board: b, hist };
+      const opp = entry.find((x) => clean(x.san) === gs);
+      if (!opp) return { kind: "opp", ply: k, key, board: b, hist, played: sans[k] };
+      b = applyTok(b, opp.m); hist.push(opp.m);
+    }
+    k++;
+  }
+  return { kind: "done", ply: k, key: posKey(b, k % 2), board: b, hist, inBookAtEnd: true };
+};
+
+/* aggregate a window of per-game breakdowns: milestone survival at moves 5/7/10
+   (both denominators), median exit move, and eval-based goal stats where the
+   caller supplies userPovCp per game (null while the engine is still thinking). */
+export const aggregateWindow = (rows) => {
+  const out = { n: rows.length, corpus: {}, learned: {}, edge: {} };
+  for (const scope of ["corpus", "learned"]) {
+    const moves = rows.map((r) => Math.floor(r[scope].ply / 2));
+    const at = (m) => (rows.length ? Math.round((100 * moves.filter((x) => x >= m).length) / rows.length) : 0);
+    const sorted = [...moves].sort((a, b) => a - b);
+    out[scope] = { at5: at(5), at7: at(7), at10: at(10),
+      median: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0,
+      userBreaks: rows.filter((r) => r[scope].kind === "user").length,
+      oppBreaks: rows.filter((r) => r[scope].kind === "opp").length,
+      out: rows.filter((r) => r[scope].kind === "out").length,
+      done: rows.filter((r) => r[scope].kind === "done").length };
+  }
+  const evald = rows.filter((r) => r.userPovCp != null);
+  const oppExits = evald.filter((r) => r.learned.kind !== "user");
+  const goal = oppExits.filter((r) => r.userPovCp >= 100);
+  const isWinR = (r) => r.g.r === "win";
+  out.edge = {
+    evald: evald.length,
+    avgCp: evald.length ? Math.round(evald.reduce((a, r) => a + r.userPovCp, 0) / evald.length) : null,
+    goalN: goal.length, oppExitN: oppExits.length,
+    goalRate: oppExits.length ? Math.round((100 * goal.length) / oppExits.length) : null,
+    conversion: goal.length ? Math.round((100 * (goal.filter(isWinR).length + 0.5 * goal.filter((r) => isDraw(r.g.r)).length)) / goal.length) : null,
+  };
+  return out;
+};
