@@ -5035,9 +5035,12 @@ function GamesPanel({ onExit }) {
   const [, bumpE] = useState(0);
   useEffect(() => EVAL.subscribe(() => bumpE((x) => x + 1)), []);
 
+  const fetchingRef = useRef(false);
   const fetchGamesFor = async (u, auto) => {
     u = (u || "").trim().toLowerCase();
     if (!u) { if (!auto) setStatus("enter your chess.com username first"); return; }
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     setBusy(true);
     try {
       try { if (STORE) await STORE.set(CCUSER, u); } catch (e) {}
@@ -5087,7 +5090,10 @@ function GamesPanel({ onExit }) {
         }
       }
       setStatus(null);
-    } catch (e) { setStatus("fetch failed — check the username and your connection"); }
+    } catch (e) {
+      setStatus(GAMESTATS.games() && GAMESTATS.games().length ? "refresh incomplete — data may be slightly stale" : "fetch failed — check the username and your connection");
+    }
+    fetchingRef.current = false;
     setBusy(false);
   };
 
