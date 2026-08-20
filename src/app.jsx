@@ -1860,13 +1860,21 @@ const HOOVER = {
   lines: [
     { t: "5...Nf6 — he develops into the kick.", baseCount: 9, plies: [
       { m: "g8f6", san: "5...Nf6", note: "The natural developing move — into a queen that owns the center." },
-      { m: "e4e5", san: "6.e5!", note: "The kick with no answer: 6...Nd5 and 6...Ne4 both hang to the centralized queen, so the knight he just developed must undevelop. +1.7 by move six, and it is pure geometry — the queen on d4 was never loose, it was a landlord." },
+      { m: "e4e5", san: "6.e5!", note: "The kick with no answer: 6...Nd5 and 6...Ne4 both hang to the centralized queen, so the knight he just developed has no forward square. +1.7 by move six — the queen on d4 was never loose, it was a landlord." },
+      { m: "c7c5", san: "6...c5", note: "The counter-kick — his best try: hit the queen back before dealing with the knight." },
+      { m: "d4e3", san: "7.Qe3!", note: "Sidestep ON the e-file: now the pinned-feeling e5 pawn is a spearhead and his knight still has nowhere good." },
+      { m: "f6d5", san: "7...Nd5", note: "The only square — and it walks into the next hit." },
+      { m: "e3f3", san: "8.Qf3!", note: "Third queen move, third threat: d5 and f7 in one diagonal-and-file view. He has moved one piece three times to stand worse everywhere; you develop with threats from here (Bc4, O-O) at +1.6. Centralized queens don't run from kicks — they surf them." },
     ] },
     { t: "5...b6 — the slow fianchetto.", baseCount: 9, plies: [
       { m: "b7b6", san: "5...b6", note: "A plan for move twelve, played on move five." },
       { m: "b1c3", san: "6.Nc3", note: "" },
       { m: "c8b7", san: "6...Bb7", note: "" },
-      { m: "d4e5", san: "7.Qe5+!", note: "The centralized queen cashes the tempo: check and g7 attacked in one move. Blocking with the queen trades into an endgame two developing moves down; anything else drops g7 and the rook behind it. Slow plans lose to centralized pieces — this is why 5.Qxd4 was never 'exposing the queen'." },
+      { m: "d4e5", san: "7.Qe5+!", note: "The centralized queen cashes the tempo: check and g7 attacked in one move. Blocking with the queen trades into an endgame two developing moves down — this is why 5.Qxd4 was never 'exposing the queen'." },
+      { m: "g8e7", san: "7...Ne7", note: "The block that keeps the queens on — g7 survives, development doesn't." },
+      { m: "f1c4", san: "8.Bc4!", note: "The laser, again: f7 is attacked and ...d5 blocks are undermined by your e-file queen." },
+      { m: "f7f6", san: "8...f6", note: "Forced ugliness — kicking the queen at the cost of the e6/g6 light squares, forever." },
+      { m: "e5h5+", san: "9.Qh5+!", note: "The punishment for ...f6, instantly: 9...g6 10.Qe2 and his kingside is a ruin of holes while you castle either side at +1.1. The queen has moved four times — and every single move was a threat he had to answer. Tempo is only wasted when the opponent gets to ignore you." },
     ] },
   ],
   drills: [
@@ -2035,10 +2043,14 @@ const SCANDI = {
     { m: "f1c4", san: "6.Bc4", chunk: "C", note: "The laser again — f7, the eternal customer." },
     { m: "c8f5", san: "6...Bf5", chunk: "C", note: "His best piece develops — the only one that will." },
     { m: "c1d2", san: "7.Bd2", chunk: "C", anchor: true, note: "The quiet clamp.", why: { q: "The bishop blocks nothing and attacks nothing. What did this move just load?", a: "The battery: your c3 knight now has Nd5! ideas — hitting the a5 queen through the d2 bishop's protection — and b4 gains more queen-tempo whenever you want it. Quiet moves that create two threats for later beat loud moves that make one now. SF: +0.6 and every piece of yours is better placed than every piece of his." } },
+    { m: "b8d7", san: "7...Nbd7", chunk: "C", note: "His standard setup move — the knight heads for b6 someday. Someday is slow." },
+    { m: "d1e2", san: "8.Qe2", chunk: "C", note: "Connect and prepare O-O-O: the d-file will belong to your rook the moment you castle." },
+    { m: "a5c7", san: "8...Qc7", chunk: "C", note: "The queen's THIRD move — retreating from the battery she finally noticed." },
+    { m: "e1c1,a1d1", san: "9.O-O-O!", chunk: "C", note: "Castle INTO the d-file: rook and queen aligned against his slowest point, Ne5 and g4-g5 to follow. SF d24: +0.5 with every plan on your side of the board. The Scandinavian tax, fully collected — from here you attack and he explains.", why: { q: "Why long castling here, when short is 'safer'?", a: "Count targets: his queenside pawns haven't moved — no hooks against your long-castled king — while your g- and h-pawns are free to charge his short-castled one. Castling is not only safety; it is choosing which pawns become soldiers. When the enemy can't open your side, long castling is a weapon with no price." } },
   ],
   promise: {
-    eyebrow: "The promise · move 7", headline: "Her third move. Your seventh piece.",
-    plyCount: 13, last: ["c1", "d2"], marks: ["a5", "d5"],
+    eyebrow: "The promise · move 9", headline: "Her third move. Your ninth piece.",
+    plyCount: 17, last: ["e1", "c1"], marks: ["c7", "d8"],
     body: "Before you learn a single move: material is level, nothing is attacked — and White is simply better everywhere. Count the developed pieces and the queen moves. Where did his opening go?",
     revealTitle: "7.Bd2",
     reveal: "He spent moves 2, 3 and later 5 (…Qa5, and she'll move again) on ONE piece; you spent every move on a different one. The battery on the c3–a5 diagonal means Nd5 and b4 come with tempo forever. The Scandinavian is playable — the club version with the wandering queen just pays a permanent development tax.",
@@ -2051,7 +2063,11 @@ const SCANDI = {
       { m: "d5d8", san: "3...Qd8", note: "The humble admission: two moves spent, nothing gained." },
       { m: "d2d4", san: "4.d4", note: "" },
       { m: "g8f6", san: "4...Nf6", note: "" },
-      { m: "g1f3", san: "5.Nf3", note: "The full center, free development, and his position has no counterplay squares at all. Play Bc4, O-O, Re1, and push when ready — the honest best-play version is simply a better game with zero risk." },
+      { m: "g1f3", san: "5.Nf3", note: "The full center, free development, and his position has no counterplay squares at all." },
+      { m: "g7g6", san: "5...g6", note: "The modern try: fianchetto and pretend the lost tempi never happened." },
+      { m: "c1f4", san: "6.Bf4", note: "Develop toward c7 — the square his queen retreat abandoned to you." },
+      { m: "f8g7", san: "6...Bg7", note: "" },
+      { m: "d1d2", san: "7.Qd2", note: "The anti-fianchetto kit: Bh6 next trades his only proud piece, O-O-O follows, and the h-pawn knows the way. +0.7 with a plan that plays itself — the retreat line is the Scandinavian without the Scandinavian's one idea." },
     ],
     ledgerTitle: "How the queen answers 3.Nc3",
     ledger: [
@@ -2162,7 +2178,13 @@ const KPAWN = {
       { m: "b5a4", san: "4.Ba4", note: "" },
       { m: "g8f6", san: "4...Nf6", note: "Develop and hit e4 — his bishop drifted offside to keep itself alive." },
       { m: "e1g1,h1f1", san: "5.O-O", note: "" },
-      { m: "f8e7", san: "5...Be7", note: "The closed Spanish setup: next ...b5, ...d6, ...O-O — same three moves every game. He got a name-brand opening; you got a plan that never changes. Equal, solid, and you know what to do while he wonders." },
+      { m: "f8e7", san: "5...Be7", note: "The closed Spanish setup begins — the same plan every game, whoever plays White." },
+      { m: "f1e1", san: "6.Re1", note: "The main move: protecting e4 so the b5 push can't be answered by tricks." },
+      { m: "b7b5!", san: "6...b5!", note: "Now — and only now — kick the bishop. Played earlier, Bxc6 and Nxe5 tricks work; played now, the e4 defense is a step behind." },
+      { m: "a4b3", san: "7.Bb3", note: "" },
+      { m: "e8g8,h8f8", san: "7...O-O!", note: "King safe on move seven. Half of club chess is this line on time." },
+      { m: "c2c3", san: "8.c3", note: "Preparing d4 — the Spanish slow build." },
+      { m: "c6a5!", san: "8...Na5!", note: "The famous maneuver: the knight that defended e5 goes hunting the Spanish bishop — c4 next hits it AGAIN, and ...c5 takes the queenside space. SF d24: level, with your plan (…Na5-c4, …c5, …Qc7, …Re8) written and his still a question. You know these eight moves cold now; the average 1200 White ran out of book on move five.", why: { q: "The knight leaves the center's defense for the rim. Why is this the book move?", a: "Because it trades itself for the Spanish bishop — White's best piece and the whole opening's point — or forces it to a worse diagonal while ...c5 gains space behind the tempo. Piece value is positional, not nominal: a rim knight that removes the opponent's best bishop outranks a centralized one that removes nothing." } },
     ] },
   ],
   drills: [],
@@ -2211,7 +2233,13 @@ const QPAWN = {
       { m: "e2e3", san: "5.e3", note: "" },
       { m: "e8g8,h8f8", san: "5...O-O", note: "King safe by move five — half of chess at this level." },
       { m: "g1f3", san: "6.Nf3", note: "" },
-      { m: "b8d7", san: "6...Nbd7!", note: "The QGD tabiya. Your plans, in order: ...c6 (the wall), then EITHER ...dxc4 and ...b5 (grab and expand) OR ...Ne4 (trade into freedom). Same setup every game, against 1400s and 2400s alike. Solid is a weapon when the other side needs to prove something." },
+      { m: "b8d7", san: "6...Nbd7!", note: "The QGD tabiya — same setup every game, against 1400s and 2400s alike." },
+      { m: "d1c2", san: "7.Qc2", note: "His most natural: queen off the d-file, eyeing your kingside." },
+      { m: "c7c5!", san: "7...c5!", note: "THE freeing break, and the whole point of the setup: strike the center the move his queen stopped watching d4. Never sit in the QGD — the wall exists to time this strike." },
+      { m: "c4d5", san: "8.cxd5", note: "" },
+      { m: "c5d4", san: "8...cxd4!", note: "Counter-capture before recapturing — your zwischenzug this time. Move order is a weapon for Black too." },
+      { m: "f3d4", san: "9.Nxd4", note: "" },
+      { m: "f6d5", san: "9...Nxd5", note: "Count the result: the center is LIQUID, your pieces flow (…N7f6, …Bd7 or …Nxc3 next), his bishop on g5 stares at a knight that can trade itself. SF d24: dead equal — which, from the Black side of a Queen's Gambit at your level, is a won argument. Equality with the better plan is the Black +1.", why: { q: "Black just traded away the whole center. Why is that GOOD here?", a: "Because pieces beat pawns in open water when their development is equal — and yours now is. The QGD's deep idea: build the wall so the wall can be demolished at the one moment demolition favors you. Structures are tools, not homes." } },
     ],
     ledgerTitle: "What White plays after 1.d4 d5",
     ledger: [
@@ -2621,8 +2649,14 @@ const EXTRAS = {
     futures: [
       { t: "He castles short", moves: [ { m: "e8g8,h8f8", san: "8...O-O" }, { m: "f2f4", san: "9.f4" } ],
         note: "The steamroller: f4-e5 breaks open the file where your heavies wait, and the kingside pawns storm his address while your king hides on the far wing. Opposite castling where only one side is attacking." },
-      { t: "He kicks the queen", moves: [ { m: "c7c5", san: "8...c5" }, { m: "d4d2", san: "9.Qd2" } ],
-        note: "The kick creates a d5 hole and leaves d6 backward on an open file — Nd5 and doubled rooks follow. Every pawn move he makes near your queen leaves behind a square she likes better." },
+      { t: "He kicks the queen", moves: [
+          { m: "c7c5", san: "8...c5", note: "The kick — attacking your queen and expecting the meek retreat. Almost right." },
+          { m: "f1b5", san: "9.Bb5+!", note: "IGNORE the kick — check first. His threat is a capture; yours is a check; checks outrank captures. This line is a cascade of zwischenzugs, and it starts here." },
+          { m: "f6d7", san: "9...Nfd7", note: "The only block that doesn't lose on the spot." },
+          { m: "g5e7", san: "10.Bxe7!", note: "Still not retreating: the OTHER bishop eats first, hitting his queen. Two of your pieces now hang — and both of his problems are bigger than both of yours." },
+          { m: "c5d4", san: "10...cxd4", note: "He finally collects your queen —" },
+          { m: "e7d8", san: "11.Bxd8!", note: "— and you collect his. The dust: 11...dxc3 12.Bc7! saves the bishop and eats the pawn back — a clean piece for a pawn (SF d24: +1.9, where the old retreat 9.Qd2 kept only +1.0).", why: { q: "Three White pieces were attacked during this sequence. Why did none of it matter?", a: "Because every White reply was MORE forcing than his threat: a check outranks a capture, a capture-with-threat outranks a quiet capture. In a forcing sequence the side making the bigger threats controls time itself — count the checks and captures to the very end before you even consider a retreat. This one habit upgrades every tactic you will ever calculate." } } ],
+        note: "The kick expected a retreat and met a cascade: check, capture-with-threat, capture — a clean piece for a pawn (SF d24: +1.9). Forcing moves outrank threats; count them to the end before you consider retreating anything." },
     ],
   },
   declines: {
@@ -3929,7 +3963,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.7·git";
+const APP_VER = "v6.8·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();

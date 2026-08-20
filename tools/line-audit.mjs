@@ -13,14 +13,29 @@ const { engineCore, START, sq, posKey, toFEN, PACKS, buildTree, CORE_PACK_IDS, L
    by design, verified by deep engine and documented. Flags matching these keys
    are reported as WAIVED, not failures. */
 const LINE_WAIVERS = {
+  // — chosen weapons (the user's explicit policy: best move unless a trap is chosen on purpose) —
   "alien|5.Neg5!?": "the trap's entry move — intentionally speculative (see 6.Nxf7!! waiver)",
   "alien|6.Nxf7!!": "SF d42: -162cp vs -18cp for 6.Nf3 — knowing, labeled trap weapon; edge line covers the correct defense",
   "alien|7.Nf3!": "inside the sacrifice's compensation phase — position already objectively Black's by design",
+  "alien|9.Bd3": "Δ34 at d18 vs the same-idea 9.Qd3 — battery order, noise-adjacent, keeps the pack's bishop geometry",
+  "alien|10.Ng6!": "the designed knight-journey (Ng6-xe7/xc8 eats the bishops); engine's 10.O-O banks ~+0.9 but abandons the pack's entire narrative in a branch reached only through Black's scripted errors",
+  "alien|11.Nxe7": "continuation of the knight-journey — see 10.Ng6! waiver",
+  "alien|12.Nxc8": "completes the journey at +3.7; engine's 12.Nxg6 is 26cp 'better' in an already-won branch",
   "alien|12.Qe2": "compensation phase of the documented sacrifice; no cloud data (local d~8 only)",
-  "kpawn|7...b5!": "keeps -341 of -433 — the classic piece-winning fork, simplest to teach; SF's alternative is more crushing but needlessly complex",
+  // — teachability keeps (sound, winning, simpler than the engine's preference) —
   "steinitz|8.bxc3": "sound (+63) simple recapture kept over the engine's 8.Nf5 zwischenzug (+166) — teachability",
   "steinitz|9.Bd3!": "keeps +305 of +408 — winning either way, thematic queen-kick",
+  "steinitz|7.O-O": "book-safe castling (+61) kept over the engine's razor 7.Ndf5 (+120) in an edge line — king safety as the teachable theme",
   "declines|8.Nc3": "keeps +27 of +101 — the pack's O-O-O+ payoff requires it; sound and simple",
+  "declines|4.dxe5": "the pack's premise (queen-trade endgame arc); engine's 4.d5 space-grab is +38cp and a different opening",
+  "hoover|7.Bg5!": "mainline theory and the pack's Bg5/O-O-O theme; Δ45 to the engine's 7.Bf4 at d18",
+  "philidor|6.Be2": "system development in the honest-road edge; Δ31 ≈ noise",
+  "philidor|6.Bc4": "the Opera Game move order — Bc4 before Qb3 is the pack's two-barrel payoff; Δ27 ≈ noise",
+  // — won-position noise (engine flip-flops between equally winning moves) —
+  "petroff|7.d4": "queen-up (+4.6) — engine 'prefers' 7.Qd1 by 66cp of +5.2; development kept over retreat",
+  "petroff|7.Qd1!": "queen-up (+4.9) — engine 'prefers' 7.d4 by 47cp of +5.4; the consolidation lesson kept (mirror of the 7.d4 waiver: at +5 the engine's ordering is noise)",
+  // — black-side keeps —
+  "kpawn|7...b5!": "keeps -341 of -433 — the classic piece-winning fork, simplest to teach; SF's alternative is more crushing but needlessly complex",
 };
 
 const args = process.argv.slice(2);
@@ -28,6 +43,8 @@ const opt = (name, dflt) => { const i = args.indexOf("--" + name); return i >= 0
 const MS = opt("ms", 2500), THRESHOLD = opt("threshold", 70), MASTERS = args.includes("--masters");
 const CLOUD = args.includes("--cloud"); // arbitrate every position with Lichess cloud Stockfish (deep) — the local engine misses deep refutations (10.Qe4? was Δ40 "clear" locally and −344cp at depth 23)
 const SF = args.includes("--sf"), DEPTH = opt("depth", 20); // local Stockfish (npm i -D stockfish) — deep, offline, no rate limit
+const BEST = args.includes("--best"); // policy: every scripted move must BE the engine's best (co-best within NOISE passes); else fix or written waiver
+const NOISE = opt("noise", 25);
 
 /* The strongest arbiter available wins: sf > cloud > the in-app engineCore.
    engineCore is NOT an arbiter — it reaches ~depth 7 and cleared 10.Qe4? at
@@ -51,7 +68,8 @@ const sfEngine = await (async () => {
       onLine = (t) => {
         const m = t.match(/^info .*\bdepth (\d+)\b.*\bscore (cp|mate) (-?\d+)/);
         if (m && +m[1] >= DEPTH) score = m[2] === "mate" ? { mate: +m[3] } : { cp: +m[3] };
-        if (/^bestmove/.test(t)) resolve(score);
+        const bm = t.match(/^bestmove\s+(\S+)/);
+        if (bm) resolve(score ? { ...score, best: bm[1] } : null);
       };
       engine.sendCommand("ucinewgame");
       engine.sendCommand("position fen " + fen);
@@ -63,7 +81,7 @@ const sfEngine = await (async () => {
         const r = await evalFen(fen);
         if (!r) return null;
         const w = fen.split(/\s+/)[1] === "w" ? 1 : -1;
-        return r.mate != null ? { mate: r.mate * w } : { cp: r.cp * w };
+        return r.mate != null ? { mate: r.mate * w, best: r.best } : { cp: r.cp * w, best: r.best };
       },
       close: () => { process.stdout.write = realWrite; },
     };
@@ -120,10 +138,16 @@ for (const [key, pos] of seen) {
   const fenBefore = toFEN(pos.b, pos.hist, pos.k);
   const after = applyTok(pos.b, pos.m);
   const fenAfter = toFEN(after, [...pos.hist, pos.m], pos.k + 1);
-  let evalBefore, evalAfter, src = "local";
+  let evalBefore, evalAfter, src = "local", engineBest = null, isBest = false;
   if (sfEngine) {
-    const b = await sfEngine.eval(fenBefore), a = await sfEngine.eval(fenAfter);
-    if (b && a) { evalBefore = cp(b); evalAfter = cp(a); src = "sf d" + DEPTH; }
+    const b = await sfEngine.eval(fenBefore);
+    if (b) engineBest = b.best || null;
+    if (b && sameMove(b.best, pos.m)) {
+      evalBefore = cp(b); evalAfter = cp(b); src = "sf d" + DEPTH + " (best)"; isBest = true;
+    } else {
+      const a = await sfEngine.eval(fenAfter);
+      if (b && a) { evalBefore = cp(b); evalAfter = cp(a); src = "sf d" + DEPTH; }
+    }
   }
   if (evalBefore == null && CLOUD) {
     const cb = await cloudEval(fenBefore, 3);
@@ -144,10 +168,26 @@ for (const [key, pos] of seen) {
   }
   // cp given up vs best play, from the USER's point of view (cloud cp is White-POV)
   const delta = pos.side === "black" ? evalAfter - evalBefore : evalBefore - evalAfter;
-  results.push({ key, ...pos, fenBefore, evalBefore, evalAfter, delta, src });
-  process.stdout.write(".");
+  results.push({ key, ...pos, fenBefore, evalBefore, evalAfter, delta, src, engineBest, isBest });
+  process.stdout.write(isBest ? "*" : ".");
 }
 console.log("");
+
+if (BEST) {
+  const bests = results.filter((r) => r.isBest).length;
+  const coBest = results.filter((r) => !r.isBest && r.delta <= NOISE);
+  const dev = results.filter((r) => !r.isBest && r.delta > NOISE).sort((a, b) => b.delta - a.delta);
+  const chip2 = (id) => (PACKS.find((p) => p.id === id) || {}).chip || id;
+  console.log(`\nBEST-MOVE POLICY: ${bests}/${results.length} scripted moves ARE the engine's best; ${coBest.length} co-best within ${NOISE}cp.`);
+  if (dev.length) {
+    console.log(`${dev.length} deviations (fix or waive):`);
+    for (const r of dev) {
+      const w = LINE_WAIVERS[r.packId + "|" + r.san];
+      console.log(`  ${w ? "~" : "!"} ${r.san} [${chip2(r.packId)}] Δ${r.delta}cp — engine prefers ${r.engineBest || "?"} (${r.evalBefore} vs ${r.evalAfter})${w ? " — WAIVED" : ""}`);
+      if (!w) console.log(`      fen: ${r.fenBefore}`);
+    }
+  }
+}
 
 const clean2 = (x) => x; // keep key format literal: packId|san
 if (sfEngine) sfEngine.close();
