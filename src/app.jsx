@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { MEM, retrievability, foldResult, owned, seedFromConf } from "./scoring.js";
-import { sanList, analyzeGames, scorePct } from "./games.js";
+import { sanList, analyzeGames, scorePct, buildLearnedRep, walkBreak, aggregateWindow } from "./games.js";
 import { buildLineDoc, buildClusters, runStatus, grandfathered, learnNext, practiceNext } from "./learn.js";
 
 /* ---------- palette ---------- */
@@ -3962,7 +3962,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.7·git";
+const APP_VER = "v6.8·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -4028,6 +4028,7 @@ const GAMESTATS = (() => {
   };
   return {
     res: () => res,
+    games: () => games,
     status: () => status,
     load: async () => {
       if (status !== "idle") return;
@@ -5026,26 +5027,21 @@ function GamesPanel({ onExit }) {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [mem, setMem] = useState({});
+  const [windowDays, setWindowDays] = useState(7);
   const [, bump] = useState(0);
   useEffect(() => { GAMESTATS.load(); return GAMESTATS.subscribe(() => bump((x) => x + 1)); }, []);
   const [, bumpL] = useState(0);
   useEffect(() => { LEARN.load(); return LEARN.subscribe(() => bumpL((x) => x + 1)); }, []);
-  useEffect(() => {
-    (async () => {
-      try { const u = STORE && (await STORE.get(CCUSER)); if (u && u.value) setUser(u.value); } catch (e) {}
-      try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {}
-    })();
-  }, []);
+  const [, bumpE] = useState(0);
+  useEffect(() => EVAL.subscribe(() => bumpE((x) => x + 1)), []);
 
-  const res = GAMESTATS.res();
-
-  const fetchGames = async () => {
-    const u = user.trim().toLowerCase();
-    if (!u) { setStatus("enter your chess.com username first"); return; }
+  const fetchGamesFor = async (u, auto) => {
+    u = (u || "").trim().toLowerCase();
+    if (!u) { if (!auto) setStatus("enter your chess.com username first"); return; }
     setBusy(true);
     try {
       try { if (STORE) await STORE.set(CCUSER, u); } catch (e) {}
-      setStatus("fetching archive list…");
+      setStatus(auto ? "refreshing your latest games…" : "fetching archive list…");
       const ar = await (await fetch(`https://api.chess.com/pub/player/${u}/games/archives`)).json();
       const months = ar.archives || [];
       if (!months.length) { setStatus("no games found for that username"); setBusy(false); return; }
@@ -5054,125 +5050,232 @@ function GamesPanel({ onExit }) {
       if (cache.user !== u) cache = { user: u, months: {} };
       const cur = months[months.length - 1];
       const out = [];
+      let failedMonths = 0;
       for (let i = 0; i < months.length; i++) {
         const url = months[i];
         const mk = url.slice(-7).replace("/", "-");
         let recs = cache.months[mk];
         if (!recs || url === cur) {
-          setStatus(`fetching ${mk} (${i + 1}/${months.length})…`);
-          const d = await (await fetch(url)).json();
-          recs = (d.games || [])
-            .filter((g) => g.time_class === "rapid" && g.rules === "chess" && g.pgn)
-            .map((g) => ({ w: g.white.username.toLowerCase() === u ? 1 : 0, s: sanList(g.pgn).slice(0, 44),
-              r: g.white.username.toLowerCase() === u ? g.white.result : g.black.result, t: g.end_time, url: g.url }));
-          cache.months[mk] = recs;
+          if (!auto || !recs) setStatus(`fetching ${mk} (${i + 1}/${months.length})…`);
+          let ok = false;
+          for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+            try {
+              const rsp = await fetch(url);
+              if (!rsp.ok) throw new Error("http " + rsp.status);
+              const d = await rsp.json();
+              recs = (d.games || [])
+                .filter((g) => g.time_class === "rapid" && g.rules === "chess" && g.pgn)
+                .map((g) => ({ w: g.white.username.toLowerCase() === u ? 1 : 0, s: sanList(g.pgn).slice(0, 44),
+                  r: g.white.username.toLowerCase() === u ? g.white.result : g.black.result, t: g.end_time, url: g.url }));
+              cache.months[mk] = recs;
+              ok = true;
+            } catch (e) { if (attempt === 1) failedMonths++; else await new Promise((r2) => setTimeout(r2, 1200)); }
+          }
+          await new Promise((r2) => setTimeout(r2, 160)); // pace the API
         }
-        out.push(...recs);
+        if (recs) out.push(...recs);
       }
+      if (failedMonths) setStatus(`${failedMonths} month(s) failed to fetch — refresh later for the rest`);
       try { if (STORE) await STORE.set(CCCACHE, JSON.stringify(cache)); } catch (e) {}
       GAMESTATS.setGames(out);
+      const R2 = GAMESTATS.res();
+      if (R2) {
+        for (const [side, rr] of [["w", R2.w], ["b", R2.b]]) {
+          TEL.log("games_analysis", { side, games: rr.totals.e4, coverage: Math.round(1000 * rr.coverage) / 1000,
+            leaks: rr.leaks.slice(0, 5).map((L) => ({ m: L.move, n: L.n, s: L.score })),
+            misses: rr.misses.slice(0, 5).map((m2) => ({ e: m2.expected, n: m2.n, r: m2.recent })) });
+        }
+      }
       setStatus(null);
     } catch (e) { setStatus("fetch failed — check the username and your connection"); }
     setBusy(false);
   };
 
+  // auto: entering the page fetches the latest games and evaluates — no button
+  useEffect(() => {
+    (async () => {
+      try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {}
+      let u = "";
+      try { const r = STORE && (await STORE.get(CCUSER)); if (r && r.value) u = r.value; } catch (e) {}
+      if (u) {
+        setUser(u);
+        const gs = GAMESTATS.games();
+        const newest = gs && gs.length ? Math.max(...gs.map((g) => g.t || 0)) * 1000 : 0;
+        if (Date.now() - newest > 10 * 60 * 1000) fetchGamesFor(u, true); // fresh within 10 min: skip refetch
+      }
+    })();
+  }, []);
+
+  const res = GAMESTATS.res();
+  const H = { sq, posKey, START };
+  const learnedSigs = LEARN.state().learned;
+  const applyTok2 = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
+  const lrep = useMemo(() => buildLearnedRep(ALL_RUNS, learnedSigs, H), [Object.keys(learnedSigs).length]);
+  const runKeySets = useMemo(() => new Map(ALL_RUNS.map((r) => {
+    let b = START.slice(); const set = new Set();
+    r.toks.forEach((m, k) => { set.add(posKey(b, k % 2)); b = applyTok2(b, m); });
+    return [r.sig, set];
+  })), []);
+
+  const winGames = useMemo(() => {
+    const gs = GAMESTATS.games() || [];
+    const cut = windowDays ? Date.now() - windowDays * 86400000 : 0;
+    return gs.filter((g) => (g.t || 0) * 1000 >= cut).sort((a, b) => (b.t || 0) - (a.t || 0));
+  }, [res, windowDays]);
+
+  const rows = useMemo(() => winGames.map((g) => {
+    const userPly = g.white ? 0 : 1;
+    const rep = g.white ? FULL_TREE.REP : FULL_TREE_B.REP;
+    return { g, userPly, corpus: walkBreak(rep, H, g.s, userPly), learned: walkBreak(lrep, H, g.s, userPly) };
+  }), [winGames, lrep]);
+
+  // engine eval of every game's last in-book (learned) position — cached forever
+  useEffect(() => {
+    for (const r of rows.slice(0, 40)) {
+      const br = r.learned;
+      if (br.ply < 4) continue; // eval of a near-start position says nothing about YOUR book
+      EVAL.request(br.key, toFEN(br.board, br.hist, br.ply), br.ply % 2 === 0 ? "w" : "b");
+    }
+  }, [rows]);
+  const cpOf = (r) => {
+    if (r.learned.ply < 4) return null;
+    const ev = EVAL.get(r.learned.key);
+    if (!ev) return null;
+    const w = ev.mate != null ? (ev.mate > 0 ? 3000 : -3000) : ev.cp;
+    return r.g.white ? w : -w;
+  };
+  const rowsCp = rows.map((r) => ({ ...r, userPovCp: cpOf(r) }));
+  const agg = useMemo(() => aggregateWindow(rowsCp), [rowsCp.map((r) => r.userPovCp).join(","), rows]);
+
+  const suggest = (row) => {
+    if (row.learned.kind === "done" && row.learned.inBookAtEnd) return null;
+    if (row.corpus.ply <= row.learned.ply && row.learned.kind !== "done") return null;
+    const cands = ALL_RUNS.filter((r) => !learnedSigs[r.sig] && r.side === (row.g.white ? "white" : "black") && runKeySets.get(r.sig).has(row.learned.key));
+    if (!cands.length) return null;
+    cands.sort((a, b) => ((res && res.runProb[b.sig]) || 0) - ((res && res.runProb[a.sig]) || 0));
+    return cands[0];
+  };
+
+  const fmt = (cp) => (cp == null ? "…" : (cp >= 3000 ? "#+" : cp <= -3000 ? "#−" : (cp > 0 ? "+" : "") + (cp / 100).toFixed(1)));
   const moveNoOf = (ply) => Math.floor(ply / 2) + 1;
-  const learnQueue = res ? learnNext(ALL_RUNS, LEARN.state(), res.runProb).slice(0, 3) : [];
   const Card = ({ title, children }) => (
     <div className="rounded-md p-4 flex flex-col gap-2" style={{ background: C.card, border: `1px solid ${C.line}` }}>
       <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: C.muted }}>{title}</div>
       {children}
     </div>
   );
+  const learnQueue = res ? learnNext(ALL_RUNS, LEARN.state(), res.runProb).slice(0, 3) : [];
 
   return (
     <div className="flex flex-col gap-4 px-5 pb-8">
-      <Eyebrow>{"♟"} My games — the tree vs reality</Eyebrow>
-      <div className="flex gap-2">
-        <input value={user} onChange={(e) => setUser(e.target.value)} placeholder="chess.com username"
-          style={{ flex: 1, background: C.card, color: C.cream, border: `1px solid ${C.line}`, borderRadius: 8, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, padding: "10px 12px" }} />
-        <button onClick={fetchGames} disabled={busy}
-          style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, borderRadius: 8, padding: "0 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: busy ? 0.5 : 1 }}>
-          {busy ? "…" : res ? "Refresh" : "Analyze"}
-        </button>
-      </div>
-      {status && <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, margin: 0 }}>{status}</p>}
-      {res && (<>
-        <Card title={`GOAL · last 30 days`}>
-          <div className="flex items-baseline gap-3">
-            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 34, color: (res.recentWhiteScore || 0) >= 80 ? C.gold : C.cream, lineHeight: 1 }}>{res.recentWhiteScore == null ? "—" : res.recentWhiteScore + "%"}</span>
-            <span style={{ fontSize: 12, color: C.muted }}>as White ({res.recentWhiteN || 0} games) → converge on 80%. Black: <b style={{ color: C.cream }}>{res.recentBlackScore == null ? "—" : res.recentBlackScore + "%"}</b> ({res.recentBlackN || 0}). The mechanism: a +1 you understand out of every opening, then the game is yours to take.</span>
-          </div>
-        </Card>
-        <Card title={`COVERAGE · from ${res.w.totals.e4} rapid games as White`}>
-          <div className="flex items-baseline gap-3">
-            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 40, color: C.gold, lineHeight: 1 }}>{Math.round(100 * res.w.coverage)}%</span>
-            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85, lineHeight: 1.45 }}>of your 1.e4 games stay inside the tree through your first six moves — the zone where the +1 gets banked.</span>
-          </div>
-          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
-            by depth: move 3 · {Math.round(100 * res.w.coverageCurve[6])}% — move 4 · {Math.round(100 * res.w.coverageCurve[8])}% — move 5 · {Math.round(100 * res.w.coverageCurve[10])}% — full line · {(100 * res.w.coverageCurve.full).toFixed(1)}%
-          </div>
-          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
-            endings observed: {res.w.totals.done} full line · {res.w.totals.opp} opponent left · {res.w.totals.user} you left first
-          </div>
-          {learnQueue.length > 0 && (
-            <div className="flex flex-col gap-1 pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
-              {learnQueue.map((r) => (
-                <div key={r.sig} style={{ fontSize: 12.5, color: C.gold }}>
-                  📖 learn next: <b>{r.id}</b> — ≈{(100 * (res.runProb[r.sig] || 0)).toFixed(1)}% of your games
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-        <Card title={`AS BLACK · from ${res.b.totals.mine} rapid games`}>
-          <div className="flex items-baseline gap-3">
-            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 30, color: C.cream, lineHeight: 1 }}>{Math.round(100 * res.b.coverageCurve[6])}%</span>
-            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85 }}>of games follow your Black book through move 3 (move 6: {Math.round(100 * res.b.coverage)}%). Top gaps: {res.b.leaks.slice(0, 3).map((L) => L.move + "×" + L.n).join(", ")}.</span>
-          </div>
-        </Card>
-        <Card title="TOP LEAKS · where opponents leave your tree (White games)">
-          {res.w.leaks.slice(0, 8).map((L, i) => (
-            <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
-              <span style={{ color: C.cream }}>{moveNoOf(L.ply)}… <b>{L.move}</b></span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: L.score != null && L.score < 45 ? C.red : C.muted, whiteSpace: "nowrap" }}>
-                {L.n}× · you score {L.score == null ? "—" : L.score + "%"}
-              </span>
-            </div>
+      <div className="flex items-center justify-between">
+        <Eyebrow>{"♟"} My games — the tree vs reality</Eyebrow>
+        <div className="flex gap-1">
+          {[[7, "7d"], [30, "30d"], [0, "all"]].map(([d, l]) => (
+            <button key={l} onClick={() => setWindowDays(d)}
+              style={{ background: windowDays === d ? C.goldSoft : "transparent", border: `1px solid ${windowDays === d ? C.gold + "66" : C.line}`, color: windowDays === d ? C.gold : C.muted, borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", cursor: "pointer" }}>{l}</button>
           ))}
-          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>ranked by frequency × score deficit. Uncovered branches you keep meeting are candidates for new lines — they arrive as briefs, not improvisations.</div>
+        </div>
+      </div>
+      {(!user || !res) && (
+        <div className="flex gap-2">
+          <input value={user} onChange={(e) => setUser(e.target.value)} placeholder="chess.com username"
+            style={{ flex: 1, background: C.card, color: C.cream, border: `1px solid ${C.line}`, borderRadius: 8, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, padding: "10px 12px" }} />
+          <button onClick={() => fetchGamesFor(user)} disabled={busy}
+            style={{ background: C.goldSoft, border: `1px solid ${C.gold}66`, color: C.gold, borderRadius: 8, padding: "0 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: busy ? 0.5 : 1 }}>
+            {busy ? "…" : "Analyze"}
+          </button>
+        </div>
+      )}
+      {status && <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.muted, margin: 0 }}>{status}</p>}
+      {res && rows.length === 0 && <p style={{ fontSize: 12.5, color: C.muted }}>No rapid games in this window.</p>}
+      {res && rows.length > 0 && (<>
+        <Card title={`DEPTH · still in book at move… (${agg.n} games)`}>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: C.cream, lineHeight: 1.9 }}>
+            <span style={{ color: C.muted }}>{"        "}mv5{"   "}mv7{"  "}mv10{"  "}median</span><br />
+            corpus{"  "}{String(agg.corpus.at5).padStart(3)}%{"  "}{String(agg.corpus.at7).padStart(3)}%{"  "}{String(agg.corpus.at10).padStart(3)}%{"   "}mv {agg.corpus.median}<br />
+            learned{" "}{String(agg.learned.at5).padStart(3)}%{"  "}{String(agg.learned.at7).padStart(3)}%{"  "}{String(agg.learned.at10).padStart(3)}%{"   "}mv {agg.learned.median}
+          </div>
+          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.85 }}>
+            breaks: you {agg.learned.userBreaks} · opponent {agg.learned.oppBreaks} · beyond your book {agg.learned.out} · completed {agg.learned.done}. Corpus = what the app could give you today; learned = what you own. The gap is free rating.
+          </div>
         </Card>
-        <Card title="YOUR MISSES · tree positions where you left book first">
-          {res.w.misses.length === 0 && <div style={{ fontSize: 12.5, color: C.cream }}>None — every deviation was your opponent’s.</div>}
-          {res.w.misses.slice(0, 8).map((m, i) => {
-            const rec = mem[m.key];
-            const R = retrievability(rec, Date.now());
-            const played = Object.entries(m.plays).sort((a, b) => b[1] - a[1]).map(([mv, n2]) => `${mv}×${n2}`).join(" ");
+        <Card title="OPENING EDGE · eval when the book ended">
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: "'Fraunces', serif", fontSize: 34, color: (agg.edge.avgCp || 0) >= 100 ? C.gold : C.cream, lineHeight: 1 }}>{agg.edge.avgCp == null ? "…" : fmt(agg.edge.avgCp)}</span>
+            <span style={{ fontSize: 12, color: C.cream, opacity: 0.85, lineHeight: 1.5 }}>
+              average eval at book-exit ({agg.edge.evald}/{agg.n} evaluated{agg.edge.evald < agg.n ? ", engine thinking…" : ""}).
+              Opponent-exit games at ≥ +1: <b style={{ color: C.gold }}>{agg.edge.goalRate == null ? "…" : agg.edge.goalRate + "%"}</b> ({agg.edge.goalN}/{agg.edge.oppExitN}) — the tutor’s job, done.
+              {agg.edge.conversion != null && <> You converted those to <b>{agg.edge.conversion}%</b> — from +1, the game is yours to take.</>}
+            </span>
+          </div>
+        </Card>
+        <Card title="GAMES · newest first">
+          {rowsCp.slice(0, 25).map((r, i) => {
+            const sug = suggest(r);
+            const br = r.learned;
+            const isUserBreak = br.kind === "user";
+            const cp = r.userPovCp;
             return (
-              <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
-                <span style={{ color: C.cream }}>move {moveNoOf(m.ply)}: expected <b style={{ color: C.gold }}>{m.expected}</b> — played {played}</span>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: m.recent ? C.red : C.muted, whiteSpace: "nowrap" }}>
-                  {m.n}×{m.recent ? ` · ${m.recent} recent` : ""} · {rec ? `R ${R.toFixed(2)}` : "untrained"}
-                </span>
+              <div key={i} className="flex flex-col gap-0.5 py-1" style={{ borderBottom: `1px solid ${C.line}55` }}>
+                <div className="flex items-baseline justify-between gap-2" style={{ fontSize: 12 }}>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted, whiteSpace: "nowrap" }}>
+                    {new Date((r.g.t || 0) * 1000).toISOString().slice(5, 10)} {r.g.white ? "♔" : "♚"}
+                    <span style={{ color: r.g.r === "win" ? C.gold : ["stalemate", "repetition", "agreed", "insufficient", "timevsinsufficient", "50move"].includes(r.g.r) ? C.muted : C.red }}> {r.g.r === "win" ? "won" : ["stalemate", "repetition", "agreed", "insufficient", "timevsinsufficient", "50move"].includes(r.g.r) ? "draw" : "lost"}</span>
+                  </span>
+                  <span className="flex-1" style={{ color: C.cream, opacity: 0.9 }}>
+                    {br.inBookAtEnd ? "in book the whole game"
+                      : isUserBreak ? <>book to mv {moveNoOf(br.ply)} — <b style={{ color: C.red }}>your slip</b> (knew {br.expected}, played {br.played})</>
+                      : br.kind === "opp" ? <>book to mv {moveNoOf(br.ply)} — he left with {br.played}</>
+                      : br.ply < 2 ? <span style={{ color: C.muted }}>not in your book yet</span>
+                      : <>your book ends at mv {moveNoOf(br.ply)} — nobody deviated</>}
+                  </span>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+                    color: cp == null ? C.muted : cp >= 100 ? C.gold : cp <= -50 ? C.red : C.muted }}>{fmt(cp)}</span>
+                </div>
+                {(sug || (r.corpus.ply > br.ply && !isUserBreak)) && (
+                  <div style={{ fontSize: 10.5, color: C.gold, opacity: 0.9 }}>
+                    {sug ? <>📖 the corpus knew this to mv {moveNoOf(r.corpus.ply)} — learn <b>{sug.id}</b>{res.runProb[sug.sig] ? ` (≈${(100 * res.runProb[sug.sig]).toFixed(1)}% of your games)` : ""}</> : <>corpus covers to mv {moveNoOf(r.corpus.ply)}</>}
+                  </div>
+                )}
               </div>
             );
           })}
           <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>
-            “recent” = last 30 days. Old misses are pre-training habit; a recent miss on trained ground is the flag — its runs are ranked for you on the Practice page.
+            eval = the engine’s verdict at the last position you still knew. ≥ +1 when HE breaks means the opening did its job; a red number is a line worth deepening; “your slip” rows are practice signals, not coverage gaps.
           </div>
         </Card>
-        <Card title="RESULTS BY BUCKET">
-          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: C.cream, lineHeight: 1.8 }}>
-            line completed: {res.w.totals.done} games · score {res.w.scores.done == null ? "—" : res.w.scores.done + "%"}<br />
-            opponent left tree: {res.w.totals.opp} · score {res.w.scores.opp == null ? "—" : res.w.scores.opp + "%"}<br />
-            you left first: {res.w.totals.user} · score {res.w.scores.user == null ? "—" : res.w.scores.user + "%"}
+        {learnQueue.length > 0 && (
+          <Card title="LEARN NEXT · ranked by your real games">
+            {learnQueue.map((r) => (
+              <div key={r.sig} style={{ fontSize: 12.5, color: C.gold }}>
+                📖 <b>{r.id}</b> — {r.label}{res.runProb[r.sig] ? ` · ≈${(100 * res.runProb[r.sig]).toFixed(1)}%` : ""}
+              </div>
+            ))}
+          </Card>
+        )}
+      </>)}
+      {res && (<>
+        <Card title={`ALL-TIME · coverage from ${res.w.totals.e4} White games`}>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
+            by depth: move 3 · {Math.round(100 * res.w.coverageCurve[6])}% — move 4 · {Math.round(100 * res.w.coverageCurve[8])}% — move 5 · {Math.round(100 * res.w.coverageCurve[10])}% — full line · {(100 * res.w.coverageCurve.full).toFixed(1)}% · Black book through move 3 · {Math.round(100 * res.b.coverageCurve[6])}%
           </div>
-          <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>the value proposition, measured: the gap between “in book” and “you left first” is what the tree is worth per game.</div>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>
+            last 30 days — White {res.recentWhiteScore == null ? "—" : res.recentWhiteScore + "%"} ({res.recentWhiteN}) · Black {res.recentBlackScore == null ? "—" : res.recentBlackScore + "%"} ({res.recentBlackN}) · goal 80%
+          </div>
+        </Card>
+        <Card title="TOP LEAKS · all-time, where opponents leave the corpus">
+          {res.w.leaks.slice(0, 6).map((L, i) => (
+            <div key={i} className="flex items-baseline justify-between gap-2" style={{ fontSize: 12.5 }}>
+              <span style={{ color: C.cream }}>{moveNoOf(L.ply)}… <b>{L.move}</b></span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: L.score != null && L.score < 45 ? C.red : C.muted, whiteSpace: "nowrap" }}>{L.n}× · you score {L.score == null ? "—" : L.score + "%"}</span>
+            </div>
+          ))}
         </Card>
       </>)}
-      {!res && !busy && (
+      {!res && !busy && !user && (
         <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.6 }}>
-          Fetches your public chess.com rapid games (straight from your device — nothing leaves it except the chess.com request), walks every 1.e4 game against your tree, and reports coverage by depth, the leaks, what to learn next, and where you left book first.
+          Enter your chess.com username once — from then on this page fetches your latest games automatically, walks each one against the corpus AND your learned lines, and shows where every game left book, whose choice that was, and what the engine said about the position you were left in.
         </p>
       )}
       <Btn full tone="ghost" onClick={onExit}>{"←"} Back</Btn>

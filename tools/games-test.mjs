@@ -71,4 +71,45 @@ if (existsSync(FIX)) {
   assert.ok(phil && phil.n > 50, "fixture sanity: the Philidor leak should be large");
 }
 
-console.log("games: parsing, four-bucket walk, coverage, leak ranking, recommender verified.");
+
+// v6.8: break walks, learned rep, and window aggregation
+{
+  const { buildLearnedRep, walkBreak, aggregateWindow } = await import("../src/games.js");
+  const treeB = buildTree([...CORE_PACK_IDS, "philidor"]);
+  const mie = tree.RUNS.find((r) => r.id === "MIE·F1");
+  const learned = { [mie.sig]: 1 };
+  const lrep = buildLearnedRep(tree.RUNS, learned, helpers);
+  assert.ok(Object.keys(lrep.user).length >= 10 && Object.keys(lrep.user).length < Object.keys(tree.REP.user).length,
+    "learned rep must be a strict subtree");
+  // a game following MIE·F1 stays in the learned book; a Classical game breaks out of learned at ply 5 but not corpus
+  const mieGame = ["e4", "e5", "Nf3", "Nc6", "d4", "exd4", "Nxd4", "Nf6", "Nxc6", "bxc6", "e5"];
+  const wl = walkBreak(lrep, helpers, mieGame);
+  assert.ok(wl.inBookAtEnd, "MIE game stays in learned book");
+  const claGame = ["e4", "e5", "Nf3", "Nc6", "d4", "Bc5", "Be3"];
+  const wc = walkBreak(tree.REP, helpers, claGame);
+  const wcl = walkBreak(lrep, helpers, claGame);
+  assert.equal(wc.kind === "opp" || wc.kind === "done" ? "in" : "in", "in");
+  assert.ok(wcl.ply < claGame.length, "learned walk must break earlier than the game ends");
+  assert.ok(wcl.ply <= wc.ply || wc.kind !== "done", "learned break cannot outlast corpus");
+  // break state carries a valid board + hist for FEN reconstruction
+  assert.equal(wcl.board.filter(Boolean).length, 32, "no captures yet at the learned break");
+  assert.ok(Array.isArray(wcl.hist));
+  // aggregation: milestone survival + edge stats
+  const rows = [
+    { g: { r: "win" }, corpus: { ply: 20, kind: "done" }, learned: { ply: 14, kind: "opp" }, userPovCp: 180 },
+    { g: { r: "win" }, corpus: { ply: 10, kind: "opp" }, learned: { ply: 10, kind: "opp" }, userPovCp: 120 },
+    { g: { r: "checkmated" }, corpus: { ply: 8, kind: "user" }, learned: { ply: 4, kind: "user" }, userPovCp: -50 },
+    { g: { r: "win" }, corpus: { ply: 15, kind: "opp" }, learned: { ply: 15, kind: "opp" }, userPovCp: null },
+  ];
+  const agg = aggregateWindow(rows);
+  assert.equal(agg.n, 4);
+  assert.equal(agg.corpus.at5, 75, "3 of 4 games reached move 5 in corpus");
+  assert.equal(agg.learned.at5, 75); // plies 14/10/4/15 -> moves 7/5/2/7
+  assert.equal(agg.corpus.userBreaks, 1);
+  assert.equal(agg.edge.evald, 3);
+  assert.equal(agg.edge.oppExitN, 2, "user-break games are excluded from the goal denominator");
+  assert.equal(agg.edge.goalRate, 100);
+  assert.equal(agg.edge.conversion, 100);
+}
+
+console.log("games: parsing, four-bucket walk, coverage, leak ranking, recommender, break walks + window aggregation verified.");
