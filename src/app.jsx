@@ -2337,6 +2337,50 @@ const QPAWN = {
     bailoutLast: ["d7", "d5"],
     bailoutNote: "Against d4-systems the plan beats the moves: strike with ...c5, ask the b2 question when the bishop wanders, castle by move six. You know the plan now; he only knows the moves.",
   },
+  lines: [
+    { t: "3.cxd5 — the Exchange.", base: ["d2d4","d7d5","c2c4","e7e6"], plies: [
+      { m: "c4d5", san: "3.cxd5", note: "The Exchange: he 'solves' the tension early — and hands you the freer recapture plus a target plan he's never studied." },
+      { m: "e6d5", san: "3...exd5!", note: "Recapture toward the center: the c8 bishop is FREE now — the one French-style problem the QGD ever had, gone." },
+      { m: "b1c3", san: "4.Nc3", note: "" },
+      { m: "g8f6", san: "4...Nf6", note: "" },
+      { m: "g1f3", san: "5.Nf3", note: "" },
+      { m: "c7c6", san: "5...c6!", note: "The Exchange wall: c6 blunts everything on the long file and prepares ...Bf5/...Bd6 in comfort." },
+      { m: "c1g5", san: "6.Bg5", note: "" },
+      { m: "f8e7", san: "6...Be7", note: "Solid, developed, and the plan is famous: ...Bf5 (the free bishop!), ...Nbd7, ...O-O — and watch his minority attack ideas (b4-b5) a decade before he has them. SF: +0.15 — the Exchange trades his opening advantage for a structure YOU know better." },
+    ] },
+    { t: "3.Nf3 — the flexible order.", base: ["d2d4","d7d5","c2c4","e7e6"], plies: [
+      { m: "g1f3", san: "3.Nf3", note: "A different door — same house." },
+      { m: "g8f6", san: "3...Nf6", note: "" },
+      { m: "b1c3", san: "4.Nc3", note: "" },
+      { m: "f8e7", san: "4...Be7", note: "Your setup does not care about his move order: Be7, castle, ...Nbd7, ...c5. One tabiya, five doors." },
+      { m: "c1g5", san: "5.Bg5", note: "" },
+      { m: "e8g8,h8f8", san: "5...O-O", note: "" },
+      { m: "e2e3", san: "6.e3", note: "" },
+      { m: "b8d7", san: "6...Nbd7", note: "And you have arrived — the SAME tabiya as the main QGD line, where your deep book (7.Qc2 c5! and the freeing strike) continues automatically. Transpositions mean you learned this line before you saw it." },
+    ] },
+    { t: "3.e3 — the timid setup.", base: ["d2d4","d7d5","c2c4","e7e6"], plies: [
+      { m: "e2e3", san: "3.e3", note: "The Queen's Gambit without its teeth: he blocks his own dark bishop on move three." },
+      { m: "g8f6", san: "3...Nf6", note: "" },
+      { m: "g1f3", san: "4.Nf3", note: "" },
+      { m: "f8e7", san: "4...Be7", note: "" },
+      { m: "f1d3", san: "5.Bd3", note: "" },
+      { m: "e8g8,h8f8", san: "5...O-O!", note: "Castled by five against a setup that cannot ever pressure you: his c1 bishop is entombed by his own third move. Plans: ...c5 whenever you like, ...b6/...Bb7, ...Nbd7. SF: +0.1 only — equality with the better future, again." },
+    ] },
+    { t: "4.Nf3 — the delayed bishop.", base: ["d2d4","d7d5","c2c4","e7e6","b1c3","g8f6"], plies: [
+      { m: "g1f3", san: "4.Nf3", note: "The other main order: knight before bishop." },
+      { m: "f8e7", san: "4...Be7", note: "Same answer as always — the setup is the repertoire." },
+      { m: "c1g5", san: "5.Bg5", note: "" },
+      { m: "e8g8,h8f8", san: "5...O-O", note: "King safe — and from here the tree already knows the road: ...Nbd7, then the 7...c5! freeing strike from the main line. Two orders in, one book out." },
+    ] },
+    { t: "2.Nf3 first — the sneaky order.", base: ["d2d4","d7d5"], plies: [
+      { m: "g1f3", san: "2.Nf3", note: "The pre-gambit shuffle (14 of your games): he wants the QG without telling you." },
+      { m: "g8f6", san: "2...Nf6", note: "" },
+      { m: "c2c4", san: "3.c4", note: "There it is —" },
+      { m: "e7e6", san: "3...e6", note: "— and there is your same answer, one move later. The QGD web absorbs every order: this path now walks into the Be7/O-O/Nbd7 tabiya you already own." },
+      { m: "b1c3", san: "4.Nc3", note: "" },
+      { m: "f8e7", san: "4...Be7", note: "Merged. From here every continuation is book you have already learned — the whole point of a repertoire built on structures instead of move orders. SF: +0.2, his choice of doors changed nothing." },
+    ] },
+  ],
   drills: [],
 };
 
@@ -4212,7 +4256,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.9·git";
+const APP_VER = "v6.10·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
