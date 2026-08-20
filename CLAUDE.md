@@ -32,6 +32,27 @@ the `STORE` shim. Deploys automatically: merge to main → Cloudflare Pages.
   room, which holds project memory). Implement briefs faithfully; flag
   disagreements in the PR rather than silently deviating.
 
+## The corpus loop (how lines get added — methodically, not ad hoc)
+
+1. **Find gaps**: `node tools/corpus-gaps.mjs [--days N --min K]` — a ranked
+   backlog from real games under the frequency policy. Classes: BRANCH (add an
+   opponent reply at a covered node), EXTEND (deepen a line that games outrun),
+   NEW (uncontacted first moves).
+2. **Draft + verify**: write candidate toks; `node tools/verify-line.mjs
+   <w|b> "<toks>"` engine-checks every user move (legality + Δ vs best).
+   Deepen with `node tools/extend-line.mjs "<toks>" <plies> [depth]` — the PV
+   is the draft, never the final word.
+3. **Author**: pack content to the content-audit bar; tokens are bare
+   coordinates (the tree-invariant rejects decorations); prefer transposition
+   on-ramps into existing tabiyas — short scripted paths auto-extend through
+   merged nodes, so one deep line serves every move order.
+4. **Gates**: tree-invariant (Law 1 per side), see-audit, content-audit,
+   roundtrip, then `line-audit --sf --best` — every flag is a fix or a
+   written waiver, no third option.
+5. **Measure**: the games-test fixture + the app's DEPTH card. Model numbers
+   on unobserved nodes are prior-dominated lower bounds; real games are the
+   verdict.
+
 ## Design doctrine — for any mechanism NOT covered by a brief
 
 Before implementing any scoring / scheduling / selection mechanism, red-team
