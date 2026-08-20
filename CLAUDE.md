@@ -114,6 +114,11 @@ A proposal without its failure analysis attached is incomplete by definition.
   learn/practice queues are ranked by runProb — each line's real-world
   frequency measured from the user's own chess.com games — so learning order
   follows what actually gets played at the user's level.
+- **Coverage policy (2026-08-20, user-set): frequency, not personal deficit.**
+  This is a learning app — everyone meets the same openings. A branch earns
+  coverage by how often the class of opponents plays it, NOT by whether the
+  current user happens to already score well there. (Personal deficit still
+  ranks urgency within the practice queues; it no longer gates authoring.)
 - **Best-move policy (2026-08-20, user-set):** every scripted user move must
   BE Stockfish's best move — verified with `tools/line-audit.mjs --sf --best`
   (co-best within 25cp passes). The only exceptions are chosen weapons
