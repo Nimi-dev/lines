@@ -114,16 +114,27 @@ A proposal without its failure analysis attached is incomplete by definition.
   learn/practice queues are ranked by runProb — each line's real-world
   frequency measured from the user's own chess.com games — so learning order
   follows what actually gets played at the user's level.
+- **Best-move policy (2026-08-20, user-set):** every scripted user move must
+  BE Stockfish's best move — verified with `tools/line-audit.mjs --sf --best`
+  (co-best within 25cp passes). The only exceptions are chosen weapons
+  (traps like the Alien Gambit) and documented teachability keeps, each a
+  written waiver in LINE_WAIVERS with its engine numbers. Run the --best
+  sweep on every content change; a new unwaived deviation is a bug. The
+  first sweep found and fixed 9.Qd2 → 9.Bb5+! (Hoover, +1.0 → +1.9, a
+  zwischenzug cascade) and produced today's waiver ledger.
 - Chess content answers to two machine gates: SEE audit (tools/see-audit.mjs,
-  in CI) and the deep engine audit (tools/line-audit.mjs --cloud, run on any
-  content change — it caught 10.Qe4? and 9.Bc4? in the Alien edge, both of
-  which shallower checks cleared). Both audits carry an explicit WAIVER table
+  in CI) and the deep engine audit (tools/line-audit.mjs --cloud/--sf, run on
+  any content change — it caught 10.Qe4? and 9.Bc4? in the Alien edge, both
+  of which shallower checks cleared). Both audits carry an explicit WAIVER table
   (the checklist's waive-in-writing clause): every waived flag names its
   engine number and its justification, and an unexercised waiver fails the
   audit. Current waivers: the Alien Gambit's sacrifice complex (a labeled
   practical weapon, −1.6 vs perfect defense, documented in its survival
   text), teachability keeps in Steinitz/Declines, 7...b5! (kpawn), and the
   SEE-blind 2...c5! (qpawn).
+- **Future direction on record (2026-08-20):** user-selectable repertoire
+  paths (e.g. Alien vs a mainline anti-Caro at the same node) — the tree will
+  need per-node path choice. Deferred by the user; design it as a brief.
 - **The tree is two-sided** (v6.5): packs carry `side` ("white" default);
   buildTree(ids, side) sets the user's ply parity, and Law 1 holds per side
   with run sigs/ids unique across sides. The Black repertoire (kpawn/qpawn)
