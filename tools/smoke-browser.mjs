@@ -48,7 +48,7 @@ const tapSquare = async (name, flip = false) => {
 
 await page.goto("http://localhost:4189/", { waitUntil: "networkidle0" });
 step("app renders", await hasText("lines"));
-step("footer stamps v6.8·git", await hasText("v6.8·git"));
+step("footer stamps v6.8.1·git", await hasText("v6.8.1·git"));
 step("Learn is the default page", await hasText("one line at a time"));
 const totalLines = await page.evaluate(() => {
   const m = document.body.innerText.match(/0\/(\d+) learned/);

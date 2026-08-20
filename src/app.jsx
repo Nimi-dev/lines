@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { MEM, retrievability, foldResult, owned, seedFromConf } from "./scoring.js";
 import { sanList, analyzeGames, scorePct, buildLearnedRep, walkBreak, aggregateWindow } from "./games.js";
 import { buildLineDoc, buildClusters, runStatus, grandfathered, learnNext, practiceNext } from "./learn.js";
@@ -3962,7 +3962,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.8·git";
+const APP_VER = "v6.8.1·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -5217,38 +5217,46 @@ function GamesPanel({ onExit }) {
           </div>
         </Card>
         <Card title="GAMES · newest first">
-          {rowsCp.slice(0, 25).map((r, i) => {
-            const sug = suggest(r);
-            const br = r.learned;
-            const isUserBreak = br.kind === "user";
-            const cp = r.userPovCp;
-            return (
-              <div key={i} className="flex flex-col gap-0.5 py-1" style={{ borderBottom: `1px solid ${C.line}55` }}>
-                <div className="flex items-baseline justify-between gap-2" style={{ fontSize: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "auto auto auto 1fr auto", columnGap: 10, rowGap: 3, alignItems: "baseline", fontSize: 12 }}>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, letterSpacing: "0.08em", color: C.muted }}>DATE</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, letterSpacing: "0.08em", color: C.muted }}>RESULT</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, letterSpacing: "0.08em", color: C.muted, textAlign: "right" }}>MV</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, letterSpacing: "0.08em", color: C.muted }}>BREAK</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, letterSpacing: "0.08em", color: C.muted, textAlign: "right" }}>EVAL</span>
+            {rowsCp.slice(0, 25).map((r, i) => {
+              const sug = suggest(r);
+              const br = r.learned;
+              const isUserBreak = br.kind === "user";
+              const cp = r.userPovCp;
+              const isDrawR = ["stalemate", "repetition", "agreed", "insufficient", "timevsinsufficient", "50move"].includes(r.g.r);
+              const resTxt = r.g.r === "win" ? "won" : isDrawR ? "draw" : "lost";
+              const resCol = r.g.r === "win" ? C.gold : isDrawR ? C.muted : C.red;
+              const brTxt = br.inBookAtEnd ? "in book throughout"
+                : isUserBreak ? `slip: ${br.played} (knew ${br.expected})`
+                : br.kind === "opp" ? `his ${br.played}`
+                : br.ply < 2 ? "—"
+                : "book end, none deviated";
+              return (
+                <Fragment key={i}>
                   <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted, whiteSpace: "nowrap" }}>
                     {new Date((r.g.t || 0) * 1000).toISOString().slice(5, 10)} {r.g.white ? "♔" : "♚"}
-                    <span style={{ color: r.g.r === "win" ? C.gold : ["stalemate", "repetition", "agreed", "insufficient", "timevsinsufficient", "50move"].includes(r.g.r) ? C.muted : C.red }}> {r.g.r === "win" ? "won" : ["stalemate", "repetition", "agreed", "insufficient", "timevsinsufficient", "50move"].includes(r.g.r) ? "draw" : "lost"}</span>
                   </span>
-                  <span className="flex-1" style={{ color: C.cream, opacity: 0.9 }}>
-                    {br.inBookAtEnd ? "in book the whole game"
-                      : isUserBreak ? <>book to mv {moveNoOf(br.ply)} — <b style={{ color: C.red }}>your slip</b> (knew {br.expected}, played {br.played})</>
-                      : br.kind === "opp" ? <>book to mv {moveNoOf(br.ply)} — he left with {br.played}</>
-                      : br.ply < 2 ? <span style={{ color: C.muted }}>not in your book yet</span>
-                      : <>your book ends at mv {moveNoOf(br.ply)} — nobody deviated</>}
-                  </span>
-                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+                  <span style={{ color: resCol, fontWeight: 600, fontSize: 11.5 }}>{resTxt}</span>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, textAlign: "right", color: br.ply >= 10 ? C.gold : C.cream }}>{br.ply < 2 ? "—" : moveNoOf(br.ply)}</span>
+                  <span style={{ color: isUserBreak ? C.red : C.cream, opacity: isUserBreak ? 1 : 0.85, fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{brTxt}</span>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, fontWeight: 600, textAlign: "right", whiteSpace: "nowrap",
                     color: cp == null ? C.muted : cp >= 100 ? C.gold : cp <= -50 ? C.red : C.muted }}>{fmt(cp)}</span>
-                </div>
-                {(sug || (r.corpus.ply > br.ply && !isUserBreak)) && (
-                  <div style={{ fontSize: 10.5, color: C.gold, opacity: 0.9 }}>
-                    {sug ? <>📖 the corpus knew this to mv {moveNoOf(r.corpus.ply)} — learn <b>{sug.id}</b>{res.runProb[sug.sig] ? ` (≈${(100 * res.runProb[sug.sig]).toFixed(1)}% of your games)` : ""}</> : <>corpus covers to mv {moveNoOf(r.corpus.ply)}</>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                  {sug && (
+                    <span style={{ gridColumn: "1 / -1", fontSize: 10.5, color: C.gold, opacity: 0.9, paddingLeft: 2, marginTop: -2 }}>
+                      📖 corpus knew to mv {moveNoOf(r.corpus.ply)} — learn <b>{sug.id}</b>{res.runProb[sug.sig] ? ` (≈${(100 * res.runProb[sug.sig]).toFixed(1)}%)` : ""}
+                    </span>
+                  )}
+                </Fragment>
+              );
+            })}
+          </div>
           <div style={{ fontSize: 10.5, color: C.muted, opacity: 0.8 }}>
-            eval = the engine’s verdict at the last position you still knew. ≥ +1 when HE breaks means the opening did its job; a red number is a line worth deepening; “your slip” rows are practice signals, not coverage gaps.
+            MV = the move your learned book ended · EVAL = the engine’s verdict there, your point of view. ≥ +1 on his break means the opening did its job; red is a line worth deepening; slips are practice signals.
           </div>
         </Card>
         {learnQueue.length > 0 && (
