@@ -31,6 +31,9 @@ const applyMoves = (moves) => {
   return b;
 };
 const fromTo = (m) => { const a = m.split(",")[0]; return [a.slice(0, 2), a.slice(2, 4)]; };
+// first sentence of a note, for the drill's opponent-move flash. Splits on a
+// terminator followed by space or end — so "3.d4" and "7...Qe7" stay intact.
+const firstSentence = (t) => { const m = (t || "").match(/^.*?[.!?](?=\s|$)/); return m ? m[0] : (t || ""); };
 const GLYPH = { k: "♚︎", q: "♛︎", r: "♜︎", b: "♝︎", n: "♞︎", p: "♟︎" };
 
 /* ============================================================
@@ -798,23 +801,24 @@ const MIESES = {
     C: "The c4 grip: space today, the healthier pawn majority forever. No trap anywhere — this is what a professional advantage looks like.",
   },
   dream: [
-    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
-    { m: "e7e5", san: "1...e5", chunk: "A", note: "" },
-    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "" },
-    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "" },
-    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The Scotch break." },
-    { m: "e5d4", san: "3...exd4", chunk: "A", note: "" },
-    { m: "f3d4", san: "4.Nxd4", chunk: "A", note: "" },
-    { m: "g8f6", san: "4...Nf6", chunk: "A", note: "The classical main — hitting e4." },
-    { m: "d4c6", san: "5.Nxc6", chunk: "B", anchor: true, note: "The volunteer.", why: { q: "This trade hands him a broad center and a half-open file. Why do world champions offer it?", a: "Structural books are read at the end of the game: doubled c-pawns can never make a healthy passed pawn; your clean kingside 4-v-3 can. His 'nice' center is a present — your majority is a pension. And the trade is timed with a tactic: e5 lands before he can arrange a better recapture." } },
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game. Every line in this repertoire grows from this pawn." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He meets you head-on. This is the reply the whole tree was built to answer — the other first moves belong to the shield packs." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Develop and attack e5 in one move. Order matters: 2.d4 exd4 is playable too, but then the queen has to recapture — the Scotch wants that job to belong to the knight." },
+    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "The natural defender, and the move that opens your door." },
+    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The Scotch break — the single door your entire White repertoire walks through. You open the center on move three, before he has arranged a single piece to hold it." },
+    { m: "e5d4", san: "3...exd4", chunk: "A", note: "He takes, because declining is worse: the refusal costs him structure and castling rights (that's the Declines pack)." },
+    { m: "f3d4", san: "4.Nxd4", chunk: "A", note: "Recapture toward the center. Now his fourth move picks which of your four Scotch packs he has walked into — this is the crossroads the whole family branches from." },
+    { m: "g8f6", san: "4...Nf6", chunk: "A", note: "The classical main — hitting e4 and demanding an answer." },
+    { m: "d4c6", san: "5.Nxc6", chunk: "B", anchor: true, note: "The volunteer trade — and the only move order that works, because 6.e5 arrives with tempo before he can rearrange.", why: { q: "This trade hands him a broad center and a half-open file. Why do world champions offer it?", a: "Structural books are read at the end of the game: doubled c-pawns can never make a healthy passed pawn; your clean kingside 4-v-3 can. His 'nice' center is a present — your majority is a pension. And the trade is timed with a tactic: e5 lands before he can arrange a better recapture." } },
     { m: "b7c6", san: "5...bxc6", chunk: "B", note: "The center looks great. For now." },
-    { m: "e4e5", san: "6.e5!", chunk: "B", anchor: true, note: "Tempo on f6 — the point of the timing." },
+    { m: "e4e5", san: "6.e5!", chunk: "B", anchor: true, note: "Tempo on f6 — the point of the whole timing. Play this one move later and he consolidates with ...d5 for free." },
     { m: "d8e7", san: "6...Qe7", chunk: "B", note: "Pinning back at the loose e5 pawn —" },
-    { m: "d1e2", san: "7.Qe2", chunk: "B", note: "Held. The clamp stays." },
-    { m: "f6d5", san: "7...Nd5", chunk: "B", note: "The dance begins." },
-    { m: "c2c4", san: "8.c4", chunk: "C", anchor: true, note: "The grip." },
+    { m: "d1e2", san: "7.Qe2", chunk: "B", note: "Held — and offered. If he trades queens on e2 your bishop recaptures toward the center and his doubled pawns face a clean endgame, so the clamp stays either way." },
+    { m: "f6d5", san: "7...Nd5", chunk: "B", note: "The dance begins. The knight has been chased once and is about to be chased again — each hop costs him a move he never gets back." },
+    { m: "c2c4", san: "8.c4", chunk: "C", anchor: true, note: "The grip. The knight is asked to move a third time, and the c4-e5 clamp becomes the permanent shape of the game.",
+      why: { q: "Three of your first eight moves are pawn moves and your kingside is still at home. Why isn't this too slow?", a: "Tempo only matters when the other side can spend it. His freeing breaks all cost more than they buy: ...f6 opens lines at his own king, ...d6 hands you the d-file against a backward pawn, and his knight is still being asked to move. When every enemy plan carries a bill, slow moves stop being slow — and b3, Bb2, Nd2 and g3 all arrive at leisure." } },
     { m: "c8a6", san: "8...Ba6!", chunk: "C", note: "The main counter — pressuring c4 through the hole his structure left." },
-    { m: "b2b3", san: "9.b3", chunk: "C", note: "The payoff — the modern tabiya. Bb2, Nd2 and g3 come next; you nurse the space and the majority for forty moves. No fireworks, no trap: a pension. 'Usual advantage' looks exactly like this — Kasparov–Karpov, 1990, board one of chess history." },
+    { m: "b2b3", san: "9.b3", chunk: "C", anchor: true, note: "The payoff — the modern tabiya. Bb2, Nd2 and g3 come next; you nurse the space and the majority for forty moves. No fireworks, no trap: a pension. 'Usual advantage' looks exactly like this — Kasparov–Karpov, 1990, board one of chess history." },
   ],
   promise: {
     eyebrow: "The promise · the tabiya", headline: "No trap. A pension.",
@@ -881,16 +885,17 @@ const PETROFF = {
     C: "The knight steps aside with DISCOVERED check — and lands on his queen. A whole queen for move order. The Petroff is sound; his impatience isn't.",
   },
   dream: [
-    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
-    { m: "e7e5", san: "1...e5", chunk: "A", note: "" },
-    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "" },
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game — and this time he does not defend." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "The symmetric reply." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Attack e5. Every Scotch pack expects 2...Nc6 here; this one begins where that expectation breaks." },
     { m: "g8f6", san: "2...Nf6", chunk: "A", note: "The Petroff: instead of defending e5, he counterattacks e4. 'I'll copy you.'" },
-    { m: "f3e5", san: "3.Nxe5", chunk: "B", anchor: true, note: "Take first, ask later." },
+    { m: "f3e5", san: "3.Nxe5", chunk: "B", anchor: true, note: "Take first, ask later. The pawn is real, and grabbing it is what forces him to prove he knows the move order." },
     { m: "f6e4", san: "3...Nxe4?", chunk: "B", note: "The copy — natural, constant, and wrong. (Theory: 3...d6! first, THEN take. Order is everything.)" },
     { m: "d1e2", san: "4.Qe2!", chunk: "B", anchor: true, note: "The x-ray.", why: { q: "The queen move attacks a defended knight. What is it really doing?", a: "Count the file: Qe2 — his knight e4 — your knight e5 — his king e8. Both knights are temporary tenants; when they leave, the file is a loaded gun pointed at the king, and your own knight leaving IS the trigger. Moves that create alignments matter before they create threats — learn to see the file behind the pieces." } },
     { m: "e4f6", san: "4...Nf6??", chunk: "C", note: "Retreating out of the 'attack' — and pulling the trigger himself." },
     { m: "e5c6+", san: "5.Nc6+!", chunk: "C", anchor: true, note: "DISCOVERED check from the e2 queen — and the knight lands next to his queen. No square saves both." },
-    { m: "f8e7", san: "5...Be7", chunk: "C", note: "Blocking the check —" },
+    { m: "f8e7", san: "5...Be7", chunk: "C", note: "Blocking the check — the best of a set of losing options, and it does not save the queen either.",
+      why: { q: "He blocked the check. Why is the queen still lost — and why would every other block also fail?", a: "Because the discovery attacked two things at once, and a block only answers one of them. The check came from the queen down the e-file; the knight that uncovered it landed on c6, where it also hits d8. Interposing on e7 addresses the file and leaves the knight's own threat untouched. That is the whole reason double attacks decide games: a single move can only ever answer a single problem." } },
     { m: "c6d8", san: "6.Nxd8", chunk: "C", note: "The payoff: a whole queen for correct move order. The Petroff itself is one of the soundest openings in chess — the toll is charged only on the copy played one move too early. Thousands pay it every day." },
   ],
   promise: {
@@ -905,10 +910,10 @@ const PETROFF = {
     eyebrow: "The danger · the correct order", headline: "3...d6! — and it's just the Petroff.",
     base: ["e2e4","e7e5","g1f3","g8f6","f3e5"], baseCount: null,
     plies: [
-      { m: "d7d6", san: "3...d6!", note: "The correct order: evict the knight FIRST." },
-      { m: "e5f3", san: "4.Nf3", note: "" },
-      { m: "f6e4", san: "4...Nxe4", note: "NOW the copy is safe — no discovery exists." },
-      { m: "d2d4", san: "5.d4", note: "" },
+      { m: "d7d6", san: "3...d6!", note: "The correct order — evict the knight first, and the whole trap evaporates before it can be set." },
+      { m: "e5f3", san: "4.Nf3", note: "Home, and the useful square: the knight watches d4 and e5 and supports the coming pawn break." },
+      { m: "f6e4", san: "4...Nxe4", note: "NOW the copy is safe — with your knight already retreated, no discovery exists." },
+      { m: "d2d4", san: "5.d4", note: "Claim the center while he is still holding a knight in the middle of the board. This pawn is the whole White plan in the real Petroff." },
       { m: "d6d5", san: "5...d5", note: "The real Petroff tabiya: solid, symmetric, famously hard to beat. Your trap needed his impatience; against the correct order, settle in for classical chess — d3-strikes, Re1, the long game." },
     ],
     ledgerTitle: "How opponents handle move 3",
@@ -959,9 +964,9 @@ const PHILIDOR = {
     C: "One queen move attacks two undefended points. Whichever he saves, you collect the other — the oldest winning geometry in chess.",
   },
   dream: [
-    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
-    { m: "e7e5", san: "1...e5", chunk: "A", note: "" },
-    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "" },
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He meets you in the center." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Attack e5 and wait for him to choose a defender. The piece he picks names the opening." },
     { m: "d7d6", san: "2...d6", chunk: "A", note: "The Philidor wall: a pawn guards e5 so no piece has to. Your most common non-Scotch reply — and the most passive." },
     { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The same break as the Scotch, one move earlier in spirit: hit e5 while his pieces still sleep.", why: { q: "Why attack the strong point he just defended?", a: "Because the defender he chose can't hold the job: the e5 pawn is guarded by d6, but d6 answers to YOUR d4 pawn. A pawn defending a pawn under central tension is a liability chain, not a wall — every exchange on e5/d4 opens lines toward a king that hasn't moved. Passive setups die by one well-timed break, not by assault." } },
     { m: "c8g4", san: "3...Bg4?!", chunk: "B", note: "The pin — the classic club answer, played for 170 years. It loses material by force. (3...exd4 is the honest road: see Edge cases.)" },
@@ -987,11 +992,11 @@ const PHILIDOR = {
     plies: [
       { m: "e5d4", san: "3...exd4", note: "The correct reply: trade the tension away before it costs something." },
       { m: "f3d4", san: "4.Nxd4", note: "A Scotch-like center for free: your knight owns d4 and his d6 pawn now BLOCKS his dark-square bishop instead of guarding anything." },
-      { m: "g8f6", san: "4...Nf6", note: "" },
-      { m: "b1c3", san: "5.Nc3", note: "" },
+      { m: "g8f6", san: "4...Nf6", note: "Developing with a hit on e4 — the move that decides where your queenside knight goes." },
+      { m: "b1c3", san: "5.Nc3", note: "Defend e4 by developing. Nothing fancy is needed here: the space advantage is already structural and does not have to be forced." },
       { m: "f8e7", san: "5...Be7", note: "The Philidor bishop, employed as a wall ornament." },
-      { m: "f1e2", san: "6.Be2", note: "" },
-      { m: "e8g8,h8f8", san: "6...O-O", note: "" },
+      { m: "f1e2", san: "6.Be2", note: "Modest and correct — the bishop has no better diagonal while d6 is defended, and this one keeps Bf3 and c4 in reserve." },
+      { m: "e8g8,h8f8", san: "6...O-O", note: "He tucks the king away and completes a solid, cramped setup." },
       { m: "e1g1,h1f1", san: "7.O-O", note: "The honest best-play version: no tricks, no material — just more space, a freer bishop, and a d6 pawn that will need an apology all game. Play c4 ideas, Bf3, watch d5. This is a better version of the open games you already play." },
     ],
     ledgerTitle: "How club players meet 3.d4 (≈, at your level)",
@@ -1032,6 +1037,208 @@ const PHILIDOR = {
       prompt: "He took the honest way: 3...exd4. Recapture correctly.",
       hints: ["Which piece WANTS the d4 square?", "Keep the queen home; the knight centralizes."],
       reason: "4.Nxd4 — a free Scotch-like center; his d6 pawn now just blocks his own bishop." },
+  ],
+};
+/* The sound Petroff. The 🎭 Petroff pack collects the toll from the premature
+   copy; this one is what a prepared opponent actually plays, and where that
+   pack's edge line used to run out of moves. Every White move verified with
+   Stockfish 18 (see tools/line-audit.mjs --sf). */
+const RUSSIAN = {
+  id: "russian", family: "shield", chip: "🪆 Russian", badge: "🪆 RUSSIAN GAME · THE REAL PETROFF · WHITE",
+  morphs: [{ ply: 5, when: "If he copies too early with 3...Nxe4", to: "petroff", note: "the toll booth — a whole queen for a move order" }],
+  chunks: { A: "Chunk A · The correct order", B: "Chunk B · The two-square center", C: "Chunk C · The c4 question" },
+  chunkGoals: {
+    A: "He evicts your knight before copying, so no discovery ever exists. Accept it: you get a free hand in the center and a lead in development instead of a trick.",
+    B: "Build the d4/Bd3 center and castle. His knight sits proudly on e4 and has nowhere to go — that is the whole story of this opening.",
+    C: "Ask the d5 pawn a question with c4. When this chunk ends his knight has been chased to b4, your pieces are all out, and the pressure is permanent.",
+  },
+  dream: [
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He answers in the center." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Attack e5 and wait for the defender." },
+    { m: "g8f6", san: "2...Nf6", chunk: "A", note: "The Petroff — he does not defend the pawn, he counterattacks yours. One of the soundest defenses in chess." },
+    { m: "f3e5", san: "3.Nxe5", chunk: "A", anchor: true, note: "Take, and make him prove he knows the order." },
+    { m: "d7d6", san: "3...d6!", chunk: "A", note: "The move that separates the prepared from the hopeful. Evicting the knight FIRST kills every discovery before it can exist — the toll booth is closed.",
+      why: { q: "The other pack wins a queen after 3...Nxe4?. Why is one move order worth a whole queen?", a: "Because the trap is not about the knight, it is about an alignment. 4.Qe2 loads an x-ray down the e-file through two knights at his king, and any knight that leaves fires it. By spending a move to evict your knight first, he removes one of the two blockers on his own terms — and the gun never gets loaded. Move order is not politeness. It is which tactics are allowed to exist." } },
+    { m: "e5f3", san: "4.Nf3", chunk: "A", note: "Home to the useful square, watching d4 and e5 and supporting the break that is coming." },
+    { m: "f6e4", san: "4...Nxe4", chunk: "A", note: "NOW the copy is safe — your knight has already left, so there is nothing to discover." },
+    { m: "d2d4", san: "5.d4", chunk: "B", anchor: true, note: "The break that defines the position. You take the big center while his knight stands in the middle of the board with no support behind it." },
+    { m: "d6d5", san: "5...d5", chunk: "B", note: "Forced, and correct — the pawn is the only thing that will ever hold that knight on e4." },
+    { m: "f1d3", san: "6.Bd3", chunk: "B", anchor: true, note: "Develop at the intruder. The bishop takes the b1-h7 diagonal and stares straight through e4.",
+      why: { q: "His knight on e4 looks magnificent. Why is it actually his problem?", a: "Because it is a piece that cannot be improved. It is held by one pawn, it has no square to advance to, and every developing move you make asks it a question — Bd3 stares at it, Re1 lines up behind it, Nbd2 offers a trade it cannot decline on good terms. A centralized piece with no future is a liability wearing a nice suit. Judge outposts by where they can GO, not by where they stand." } },
+    { m: "f8e7", san: "6...Be7", chunk: "B", note: "The main line: develop, castle, and keep the knight defended by the d5 pawn." },
+    { m: "e1g1,h1f1", san: "7.O-O", chunk: "B", note: "King safe, rook toward the e-file. Nothing clever is required here — the position rewards completing development faster than he can." },
+    { m: "b8c6", san: "7...Nc6", chunk: "C", note: "Developing with pressure on d4 — his most natural try." },
+    { m: "c2c4", san: "8.c4", chunk: "C", anchor: true, note: "The question. The d5 pawn is the only defender of his knight, so you attack the defender rather than the knight." },
+    { m: "c6b4", san: "8...Nb4", chunk: "C", note: "His best: hit the d3 bishop before it can take on e4, and try to trade off your good piece." },
+    { m: "d3e2", san: "9.Be2", chunk: "C", note: "Step aside and keep the bishop. Retreating is not a concession when the alternative is trading your best minor piece for a knight that had to move anyway." },
+    { m: "e8g8,h8f8", san: "9...O-O", chunk: "C", note: "He tucks the king away and completes development." },
+    { m: "b1c3", san: "10.Nc3", chunk: "C", anchor: true, note: "The payoff. Every piece is out, c4 keeps asking d5 the question, and his knight on e4 must be traded or retreated on your terms. No trap here — a permanent pull against the soundest defense in chess, which is exactly what it is worth." },
+  ],
+  promise: {
+    eyebrow: "The promise · move 10", headline: "No trick. A permanent question.",
+    plyCount: 19, last: ["b1", "c3"], marks: ["e4", "c4"],
+    body: "Nothing is hanging and nobody is winning material. Against the soundest defense in chess, where does White's pull actually live?",
+    revealTitle: "10.Nc3",
+    reveal: "In two places: the c4 pawn asking d5 a question it cannot answer for free, and a black knight on e4 that looks wonderful and can never improve. Your pieces all have a next move; his best piece has only retreats. That is what an edge against a sound defense looks like — not a refutation, a question he has to keep answering.",
+    chip: "3...d6! is the correct order and the majority club choice — this is the Petroff you should expect to face.",
+  },
+  danger: {
+    eyebrow: "The edge case · the other bishop", headline: "6...Bd6 — the active square.",
+    base: null, baseCount: 11,
+    plies: [
+      { m: "f8d6", san: "6...Bd6", note: "The second main setup: the bishop eyes h2 instead of tucking in on e7, and Black plans ...O-O and ...c6 to build a wall." },
+      { m: "e1g1,h1f1", san: "7.O-O", note: "Same move, same reason. Castle first and let him show you the setup before you commit the queenside." },
+      { m: "e8g8,h8f8", san: "7...O-O", note: "He castles into the same structure." },
+      { m: "c2c4", san: "8.c4", note: "The same question, asked on schedule. Whatever bishop he chose, d5 is still the pawn holding everything together." },
+      { m: "c7c6", san: "8...c6", note: "The difference: he props the d5 pawn with another pawn instead of a piece. Solid — and it costs him the c6 square his knight wanted." },
+      { m: "f1e1", san: "9.Re1", note: "The rook joins the file his knight is sitting on. Simple, strong, and better than rushing to resolve the center." },
+      { m: "c8g4", san: "9...Bg4", note: "Pinning the f3 knight to add pressure on d4 — his most testing continuation." },
+      { m: "h2h3", san: "10.h3", note: "Question the pin at once. He must take, retreat, or hold — and every answer costs him something, while your position has no weaknesses to fix. The c6 wall means his light-squared bishop is his only active piece; trading or chasing it is the whole plan." },
+    ],
+    ledgerTitle: "How the Petroff is met at move 6 (estimate)",
+    ledger: [
+      { label: "6...Be7 — the main line", pct: 46, color: C.gold },
+      { label: "6...Bd6 — the active square", pct: 34, color: C.red },
+      { label: "Other (...Nc6, ...Bf5)", pct: 20, color: C.muted },
+    ],
+    survivalTitle: "One recipe for the whole opening",
+    survival: "Bd3, castle, c4, and put a rook on e1. In that order, against almost anything. The Petroff has no refutation — your edge comes from asking the d5 pawn a question every single move while his knight on e4 runs out of future. Stop looking for a knockout and the position plays itself.",
+    bailoutTitle: "The queenless lane — move 5",
+    bailoutMoves: ["e2e4","e7e5","g1f3","g8f6","f3e5","d7d6","e5f3","f6e4","d1e2"],
+    bailoutLast: ["d1", "e2"],
+    bailoutNote: "5.Qe2 — pin the knight, invite the trade, and steer toward a dry queenless middlegame with a tiny structural pull. Far less theory than 5.d4, and far less to play for. Take this road when you want a short game, not a good one.",
+  },
+  drills: [
+    { id: "ru1", kind: "move", plyCount: 8, from: "d2", to: "d4",
+      prompt: "He played the correct order and took on e4. Claim what the order cost him.",
+      hints: ["His knight is in the middle of the board with nothing behind it.", "Take the center while he is still holding a piece there."],
+      reason: "5.d4 — the big center, and the e4 knight now needs a pawn to survive." },
+    { id: "ru2", kind: "move", plyCount: 10, from: "f1", to: "d3",
+      prompt: "He propped the knight with 5...d5. Develop — at the intruder.",
+      hints: ["Which diagonal points through e4?", "Development and pressure in one move."],
+      reason: "6.Bd3 — the bishop takes the long diagonal and stares through the knight that cannot improve." },
+    { id: "ru3", kind: "move", plyCount: 14, from: "c2", to: "c4",
+      prompt: "Everything is developed and castled. Ask the question.",
+      hints: ["Don't attack the knight — attack what holds it.", "One pawn move puts the whole center in question."],
+      reason: "8.c4 — d5 is the knight's only support, so that is the pawn you argue with." },
+    { id: "ru4", kind: "goal",
+      prompt: "Against a defense with no refutation, what are you actually playing for?",
+      options: [
+        "A permanent question: c4 against d5, and a knight on e4 with no square to improve to",
+        "A forced win of the e4 knight",
+        "A kingside mating attack against the castled king",
+      ], correct: 0,
+      reason: "Knowing there is no knockout is what stops you forcing one. Against sound defenses the edge is a question the opponent must keep answering — and answering costs time, every time." },
+    { id: "ru5", kind: "move", danger: true, plyCount: 11, extra: ["f8d6"],
+      from: "e1", to: "g1",
+      prompt: "He chose the active 6...Bd6. Your move.",
+      hints: ["Nothing has changed about your plan — do the next thing on the list.", "Safety before commitment."],
+      reason: "7.O-O — castle, then c4 and Re1 as always. The setup does not care which bishop he picked." },
+  ],
+};
+
+/* The Philidor that a prepared opponent actually plays: 3...Nd7, the Hanham.
+   The 🪨 Philidor pack punishes the pin; this one meets the setup that does not
+   hang anything — and carries the trap that the natural 4...Ngf6 walks into.
+   Every White move verified with Stockfish 18. */
+const HANHAM = {
+  id: "hanham", family: "shield", chip: "🐢 Hanham", badge: "🐢 PHILIDOR · HANHAM 3...Nd7 · WHITE",
+  morphs: [{ ply: 5, when: "If he plays the pin 3...Bg4 instead", to: "philidor", note: "the Opera Game line — two targets, one defender" }],
+  chunks: { A: "Chunk A · The shell", B: "Chunk B · The four-square box", C: "Chunk C · The clamp" },
+  chunkGoals: {
+    A: "He builds the Hanham shell: pawns on e5 and d6, knight to d7, everything defended and nothing developed. Take the aggressive square while he is still building.",
+    B: "Castle, put the rook on the e-file, develop the queenside knight. His whole army lives on the back two ranks — you simply finish first.",
+    C: "a4 takes his only pawn break away. When this chunk ends he is solid, cramped and out of ideas, and you have both the space and the plan.",
+  },
+  dream: [
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He meets you in the center." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Attack e5. The piece he defends with names the opening." },
+    { m: "d7d6", san: "2...d6", chunk: "A", note: "The Philidor: a pawn guards e5 so no piece has to." },
+    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The break, exactly as in the other Philidor pack. Hit the strong point while his pieces are still at home." },
+    { m: "b8d7", san: "3...Nd7", chunk: "A", note: "The Hanham — the modern main line and the reason the Philidor is still played. He holds e5 a second time without blocking the c-pawn or hanging the bishop.",
+      why: { q: "The other Philidor pack wins material by move 7. Why does nothing like that work here?", a: "Because 3...Nd7 hangs nothing. The pin line loses to a double attack on b7 and f7; here the b7 pawn keeps its defender and f7 keeps its king. What he pays instead is space and time — the knight on d7 blocks his own bishop, and the whole army needs two more moves than yours to breathe. Against a setup with no loose pieces, stop looking for tactics and start counting tempi." } },
+    { m: "f1c4", san: "4.Bc4", chunk: "A", anchor: true, note: "The most testing square. The bishop points at f7, which the d7 knight has just made harder to defend — and it is the move that punishes the natural 4...Ngf6 (see Edge cases)." },
+    { m: "c7c6", san: "4...c6", chunk: "B", note: "The accurate reply: cover b5 and d5, prepare ...Qc7 and ...b5. This is the move a prepared Philidor player knows." },
+    { m: "e1g1,h1f1", san: "5.O-O", chunk: "B", note: "King safe first — there is no rush in a position where the opponent needs three more moves than you." },
+    { m: "f8e7", san: "5...Be7", chunk: "B", note: "The modest developer. Every Hanham bishop goes here; it defends and does nothing else." },
+    { m: "f1e1", san: "6.Re1", chunk: "B", anchor: true, note: "The rook lands on the file his e5 pawn is standing on. This is the quiet move that makes ...exd4 permanently unattractive." },
+    { m: "g8f6", san: "6...Ngf6", chunk: "B", note: "Now it is safe: with the rook committed to e1 and the center held, the knight comes out without dropping a pawn." },
+    { m: "b1c3", san: "7.Nc3", chunk: "B", note: "The last minor piece. Simple development beats cleverness here — you are ahead, and every trade you avoid keeps him cramped." },
+    { m: "e8g8,h8f8", san: "7...O-O", chunk: "C", note: "He completes the shell. Solid, sound, and one move short of an actual plan." },
+    { m: "a2a4", san: "8.a4", chunk: "C", anchor: true, note: "The clamp. His only real break is ...b5, and this takes it away before he can prepare it.",
+      why: { q: "A rook's pawn on move eight, with the center unresolved. How is that the best move?", a: "Because you are playing against his plan, not your own. Count his breaks: ...d5 is impossible while d4 and e4 are both defended, ...f5 wrecks his own king, so the entire Hanham lives on ...b5 — and a4 deletes it. A cramped position with a break is a coiled spring; a cramped position with no break is just cramped. When the opponent has exactly one idea, spend a move on it and he has none." } },
+    { m: "a7a5", san: "8...a5", chunk: "C", note: "Stopping a5 in return — and permanently weakening b5. He has traded his one break for a hole." },
+    { m: "h2h3", san: "9.h3", chunk: "C", anchor: true, note: "The payoff position, and a useful move in a position with no hurry: ...Ng4 and ...Bg4 are off the table forever. His shell is intact and completely passive; you have Be3, Qd2, Nd5 and the b5 square, and all the time in the world to use them." },
+  ],
+  promise: {
+    eyebrow: "The promise · move 9", headline: "Solid, and out of ideas.",
+    plyCount: 17, last: ["h2", "h3"], marks: ["b5", "e5"],
+    body: "Every black piece is defended and nothing can be won. So why is this comfortable for White for the next thirty moves?",
+    revealTitle: "9.h3",
+    reveal: "Because he has no break left. ...d5 never works with both centre pawns guarded, ...f5 opens his own king, and a4 deleted ...b5 — the one idea the Hanham is built on. You hold more space, both bishops have futures, and b5 is a hole you can occupy at leisure. Positions are not equal because nothing hangs; they are equal when both sides have something to do.",
+    chip: "3...Nd7 is the main line of the modern Philidor — the version that does not lose material by force.",
+  },
+  danger: {
+    eyebrow: "The edge case · the natural developing move", headline: "4...Ngf6? — and it loses a pawn by force.",
+    base: null, baseCount: 7,
+    plies: [
+      { m: "g8f6", san: "4...Ngf6?", note: "The move nine club players in ten make here. It develops, it defends, and it drops a pawn to a forcing sequence that starts with a piece." },
+      { m: "d4e5", san: "5.dxe5!", note: "Open the position while his king is still in the middle. Every capture from here is forced." },
+      { m: "d7e5", san: "5...Nxe5", note: "Forced in spirit — 5...dxe5 6.Ng5 is worse, and 5...Nxe4 loses to 6.Qd5." },
+      { m: "f3e5", san: "6.Nxe5", note: "Take again. Keep the sequence forcing and do not give him a free move." },
+      { m: "d6e5", san: "6...dxe5", note: "He restores material, and his king is now stuck on e8 in front of an open d-file." },
+      { m: "c4f7", san: "7.Bxf7+!", note: "The point. A bishop for a pawn — because the king must take, and the queen falls next move.",
+        why: { q: "You are giving up a bishop for a pawn. What makes this different from hope?", a: "Nothing about it is hope: every move in the sequence is forced and countable. 7...Kxf7 is the only legal answer to the check, and it removes the king from the d-file — where your queen already faces his. The sacrifice is not buying an attack, it is buying a geometry: after the king steps to f7, Qxd8 is check-free, undefended and unavoidable. Sacrifice for a forced sequence, never for a feeling." } },
+      { m: "e8f7", san: "7...Kxf7", note: "Forced — and the king has just walked off the d-file it was blocking." },
+      { m: "d1d8", san: "8.Qxd8", note: "Collecting the queen. And now the only real test of the whole line arrives." },
+      { m: "f8b4", san: "8...Bb4+!", note: "The in-between check that saves him — his bishop attacks your queen and checks your king at the same time, so he wins the queen straight back. This is where the line is actually decided." },
+      { m: "d8d2", san: "9.Qd2!", note: "The ONLY move that keeps the advantage. Your queen blocks the check and offers herself back on your terms. (9.c3?? and 9.Bd2?? both throw the entire game away — the engine drops from +1.7 to level.)" },
+      { m: "b4d2", san: "9...Bxd2+", note: "He takes, because everything else is worse — and now the recapture matters." },
+      { m: "b1d2", san: "10.Nxd2", note: "With the KNIGHT, developing a piece and keeping everything guarded. (10.Bxd2 and 10.Kxd2 are both far worse.) The dust settles: you are a clean pawn up, his king sits on f7 with castling gone forever, and his structure is broken. That is what 4...Ngf6? costs." },
+    ],
+    ledgerTitle: "Black's fourth move against 4.Bc4 (estimate)",
+    ledger: [
+      { label: "4...c6 — the accurate Hanham", pct: 41, color: C.red },
+      { label: "4...Ngf6? — natural, loses a pawn", pct: 38, color: C.gold },
+      { label: "Other (...Be7, ...exd4)", pct: 21, color: C.muted },
+    ],
+    survivalTitle: "Against the accurate 4...c6",
+    survival: "There is no trick against 4...c6 — castle, Re1, Nc3, a4. Take the ...b5 break away and play the long game with more space. Learn the trap for the third of opponents who develop naturally, and the setup for the rest.",
+    bailoutTitle: "The no-theory lane — move 4",
+    bailoutMoves: ["e2e4","e7e5","g1f3","d7d6","d2d4","b8d7","b1c3"],
+    bailoutLast: ["b1", "c3"],
+    bailoutNote: "4.Nc3 — develop, keep the tension, and reach a normal game with a small edge and nothing to memorize. The Bc4 road is sharper and carries the trap; this one asks nothing of your memory.",
+  },
+  drills: [
+    { id: "hn1", kind: "move", plyCount: 6, from: "f1", to: "c4",
+      prompt: "He built the Hanham shell with 3...Nd7. Take the testing square.",
+      hints: ["Which square did the knight on d7 just make harder to defend?", "Point at the weakest square in his camp."],
+      reason: "4.Bc4 — aiming at f7, and loading the trap that 4...Ngf6? walks into." },
+    { id: "hn2", kind: "move", plyCount: 14, from: "a2", to: "a4",
+      prompt: "He has castled into a solid shell. Play against his plan.",
+      hints: ["Count his pawn breaks. How many are there really?", "Delete the only one before he prepares it."],
+      reason: "8.a4 — ...b5 was the Hanham's whole idea, and now it is gone." },
+    { id: "hn3", kind: "goal",
+      prompt: "Why is this comfortable for White when nothing can be won?",
+      options: [
+        "He has no pawn break left, so he has space to lose and nothing to do with it",
+        "White wins the e5 pawn by force",
+        "Black's king is unsafe on g8",
+      ], correct: 0,
+      reason: "Equality is not 'nothing hangs' — it is 'both sides have something to do'. Learning to take away plans is worth more than learning another twenty moves of theory." },
+    { id: "hn4", kind: "move", danger: true, plyCount: 7, extra: ["g8f6"],
+      from: "d4", to: "e5",
+      prompt: "He developed naturally with 4...Ngf6. Punish it — first move of the sequence.",
+      hints: ["Open the position while his king is still in the middle.", "Everything from here is forced. Start with the capture."],
+      reason: "5.dxe5! — and the whole sequence runs to Bxf7+ and Qxd8." },
+    { id: "hn5", kind: "move", danger: true,
+      moves: ["e2e4","e7e5","g1f3","d7d6","d2d4","b8d7","f1c4","g8f6","d4e5","d7e5","f3e5","d6e5","c4f7","e8f7","d1d8","f8b4"],
+      from: "d8", to: "d2",
+      prompt: "You won the queen — and he hit you with 8...Bb4+. Only one move keeps the win.",
+      hints: ["He is checking you AND attacking your queen. One move must answer both.", "Block the check with the piece he is attacking."],
+      reason: "9.Qd2! — block and offer the trade on your terms. 9.c3?? and 9.Bd2?? both hand the whole advantage back; after 9...Bxd2+ recapture with the KNIGHT." },
   ],
 };
 
@@ -1428,24 +1635,25 @@ const CLASSICAL = {
     C: "Retreat without regret, castle, build the f3 wall. When this chunk ends you hold a plan-rich space edge that plays itself.",
   },
   dream: [
-    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
-    { m: "e7e5", san: "1...e5", chunk: "A", note: "" },
-    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "" },
-    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "" },
-    { m: "d2d4", san: "3.d4", chunk: "A", note: "The break." },
-    { m: "e5d4", san: "3...exd4", chunk: "A", note: "" },
-    { m: "f3d4", san: "4.Nxd4", chunk: "A", note: "" },
-    { m: "f8c5", san: "4...Bc5", chunk: "B", note: "The Classical — his most active square, hitting your centralized knight." },
-    { m: "c1e3", san: "5.Be3", chunk: "B", anchor: true, note: "Development that defends.", why: { q: "Why meet the bishop with a bishop — doesn't 5...Qf6 double-attack d4 anyway?", a: "Count defenders AND in-betweens: after 5...Qf6 6.c3 holds everything, and every capture sequence on d4 ends with your recapture arriving with tempo on c5. Be3 doesn't just guard — it makes his most active try the move you've already answered. Best-play prep is mostly this: pre-answering." } },
-    { m: "d8f6", san: "5...Qf6", chunk: "B", note: "The accurate press — the queen joins the d4 siege. All book." },
-    { m: "c2c3", san: "6.c3", chunk: "B", note: "The quiet holder: d4 is now permanent." },
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game — same first move, second story." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He accepts the open game." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Develop with a threat. Nothing here is a choice yet — the repertoire's first decision is one move away." },
+    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "He defends e5 and develops." },
+    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The break, played the same way every time. Board two of your repertoire starts on his next move, not yours — which is exactly why the first seven plies are free memory." },
+    { m: "e5d4", san: "3...exd4", chunk: "A", note: "He takes." },
+    { m: "f3d4", san: "4.Nxd4", chunk: "A", note: "The recapture, and the crossroads. Roughly four in ten club opponents now choose the bishop move that names this pack." },
+    { m: "f8c5", san: "4...Bc5", chunk: "B", note: "The Classical — his most active square, hitting your centralized knight and eyeing f2 behind it." },
+    { m: "c1e3", san: "5.Be3", chunk: "B", anchor: true, note: "Development that defends — the two jobs one move should always try to hold at once.", why: { q: "Why meet the bishop with a bishop — doesn't 5...Qf6 double-attack d4 anyway?", a: "Count defenders AND in-betweens: after 5...Qf6 6.c3 holds everything, and every capture sequence on d4 ends with your recapture arriving with tempo on c5. Be3 doesn't just guard — it makes his most active try the move you've already answered. Best-play prep is mostly this: pre-answering." } },
+    { m: "d8f6", san: "5...Qf6", chunk: "B", note: "The accurate press — the queen joins the siege of d4. All book, and the reason 5.Be3 came first." },
+    { m: "c2c3", san: "6.c3", chunk: "B", note: "The quiet holder. One pawn ends the siege: d4 now has three defenders and his pressure has nowhere left to grow." },
     { m: "g8e7", san: "6...Nge7", chunk: "B", note: "Best: rerouting toward g6 without blocking the f-pawn or the queen." },
-    { m: "f1c4", san: "7.Bc4", chunk: "B", note: "Active development while his pieces are tangled." },
-    { m: "c6e5", san: "7...Ne5", chunk: "B", note: "Hitting the bishop with tempo — his last active idea." },
+    { m: "f1c4", san: "7.Bc4", chunk: "B", note: "Active development while his pieces are still untangling — the bishop takes the diagonal his king will miss." },
+    { m: "c6e5", san: "7...Ne5", chunk: "B", note: "Hitting the bishop with tempo — his last genuinely active idea in the line." },
     { m: "c4e2", san: "8.Be2", chunk: "C", anchor: true, note: "Retreat without regret: the bishop's job now is to hold the wall, not to shine." },
-    { m: "f6g6", san: "8...Qg6", chunk: "C", note: "Eyeing e4 and g2 — it looks scary and isn't. (The e4 grab is the edge case.)" },
+    { m: "f6g6", san: "8...Qg6", chunk: "C", note: "Eyeing e4 and g2 at once — it looks scary and isn't. The e4 grab is the edge case, and g2 was never really available.",
+      why: { q: "His queen hits g2 and e4 at once and your king is still on e1. How does one move answer both?", a: "It answers one and prices the other. Castling defends g2 by arriving: the king lands on g1 and the pawn behind it is guarded for the rest of the game. That leaves e4 — deliberately. The pawn is bait, and the edge case shows the bill: four queen moves to win it while every White move comes with a threat. Fear at the board is usually an uncounted line. Count it once, at home, and the same position becomes restful." } },
     { m: "e1g1,h1f1", san: "9.O-O!", chunk: "C", anchor: true, note: "Calm. The g2 'threat' was never real, and e4 is bait on a hook — see Edge cases." },
-    { m: "d7d6", san: "9...d6", chunk: "C", note: "Book: he declines the bait and completes his setup." },
+    { m: "d7d6", san: "9...d6", chunk: "C", note: "Book, and his best. He declines the bait and completes the setup — this is the honest main line, and the position you should expect from a prepared opponent." },
     { m: "f2f3", san: "10.f3", chunk: "C", anchor: true, note: "The payoff tabiya.", why: { q: "A backward little pawn move as the payoff — why?", a: "The wall makes e4 permanent, which fires every piece from guard duty at once: the e3 bishop, the d4 knight, the queen all become free agents. Then f4 kicks his only active piece at YOUR convenience. Pawns defend so pieces can attack — the humblest move on the board is the one that mobilizes your whole army." } },
   ],
   promise: {
@@ -1516,23 +1724,24 @@ const STEINITZ = {
     C: "Knight to b5, recapture toward the center, castle. He keeps the pawn; you keep everything else.",
   },
   dream: [
-    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
-    { m: "e7e5", san: "1...e5", chunk: "A", note: "" },
-    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "" },
-    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "" },
-    { m: "d2d4", san: "3.d4", chunk: "A", note: "" },
-    { m: "e5d4", san: "3...exd4", chunk: "A", note: "" },
-    { m: "f3d4", san: "4.Nxd4", chunk: "A", note: "" },
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He steps into the center." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Develop, attack, and keep the break in hand." },
+    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "The defender arrives." },
+    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The break. Identical to every other Scotch pack — the first seven plies are one memory, reused four ways." },
+    { m: "e5d4", san: "3...exd4", chunk: "A", note: "He takes." },
+    { m: "f3d4", san: "4.Nxd4", chunk: "A", note: "Recapture toward the center — and now the loudest fourth move in the whole family arrives." },
     { m: "d8h4", san: "4...Qh4!?", chunk: "B", note: "The Steinitz sortie: 'threatening' e4 and f2. It looks terrifying at a board. Start counting tempi." },
     { m: "b1c3", san: "5.Nc3!", chunk: "B", anchor: true, note: "Calm development.", why: { q: "The queen eyes e4 AND f2 — why does one developing move answer both?", a: "Count what's actually attacked: f2 is defended by your own king, so that 'threat' is theater. Only e4 is real, and Nc3 answers it while developing. Against early queen sorties the winning recipe never changes: meet threats with developing moves, and let her majesty become the target." } },
     { m: "f8b4", san: "5...Bb4", chunk: "B", note: "Pinning the defender — renewing Qxe4 for real this time." },
     { m: "f1e2", san: "6.Be2!", chunk: "B", anchor: true, note: "The invitation.", why: { q: "You could defend e4 a second time. Why invite the capture instead?", a: "Because the capture IS the trap: after Qxe4, Ndb5! hits c7 while your development lead converts into open files against a king that must move. A pawn that costs him three tempi and castling rights is the best sale you'll ever make. Gambits aren't always planned on move one — sometimes you improvise one when the enemy queen strays far from home." } },
     { m: "h4e4", san: "6...Qxe4", chunk: "B", note: "Taken — the consistent follow-up and the objectively critical test. Good for him that it's critical; better for you that it's this." },
     { m: "d4b5", san: "7.Ndb5!", chunk: "C", anchor: true, note: "The turn: Nxc7+ is threatened, forking king and rook, while his queen watches from the wrong wing." },
-    { m: "b4c3", san: "7...Bxc3+", chunk: "C", note: "Removing one attacker with check —" },
-    { m: "b2c3", san: "8.bxc3", chunk: "C", note: "— and opening your b-file. Recapture toward the center, always." },
+    { m: "b4c3", san: "7...Bxc3+", chunk: "C", note: "Removing one attacker with check — his most testing try, and the move that hands you the file." },
+    { m: "b2c3", san: "8.bxc3", chunk: "C", note: "— and the b-file opens onto b7. The engine narrowly prefers the other recapture; this is a deliberate keep, because it points your remaining pieces at a king with nowhere to go.",
+      why: { q: "Your pawns are now doubled on c2 and c3. Why is that a good structure here?", a: "Structure is never scored in a vacuum — it is scored against the plans it enables. The doubled c-pawn is ugly on paper and nearly unreachable in play, while the file it opened points at b7 and the pawn itself covers b4 and d4 against his pieces. A weakness nobody has time to reach is not a weakness. Trade static defects for open files whenever there is a stuck king at the end of the file." } },
     { m: "e8d8", san: "8...Kd8", chunk: "C", note: "The only real parry to Nxc7+: the king takes up bodyguard duty. Forever." },
-    { m: "e1g1,h1f1", san: "9.O-O!", chunk: "C", note: "The payoff. He's up a clean pawn — and strategically lost: king on d8 for life, the b- and e-files opening onto him, Ba3 coming to seal the dark squares, and a queen that moved three times to buy one pawn. Engines call the compensation nearly decisive. Humans convert it faster." },
+    { m: "e1g1,h1f1", san: "9.O-O!", chunk: "C", anchor: true, note: "The payoff. He's up a clean pawn — and strategically lost: king on d8 for life, the b- and e-files opening onto him, Ba3 coming to seal the dark squares, and a queen that moved three times to buy one pawn. Engines call the compensation nearly decisive. Humans convert it faster." },
   ],
   promise: {
     eyebrow: "The promise · move 9", headline: "Her majesty pays at every toll.",
@@ -1548,9 +1757,9 @@ const STEINITZ = {
     plies: [
       { m: "g8f6", san: "6...Nf6", note: "Declining — developing while keeping the e4 question open." },
       { m: "e1g1,h1f1", san: "7.O-O", note: "Castle first; the bait stays on the hook." },
-      { m: "b4c3", san: "7...Bxc3", note: "" },
-      { m: "b2c3", san: "8.bxc3", note: "" },
-      { m: "h4e4", san: "8...Qxe4", note: "The delayed grab —" },
+      { m: "b4c3", san: "7...Bxc3", note: "The same trade one move later — and it costs him more now, because your king is already home." },
+      { m: "b2c3", san: "8.bxc3", note: "Toward the center, as always: the b-file opens and c3 seals d4 for good." },
+      { m: "h4e4", san: "8...Qxe4", note: "The delayed grab, and the same bill —" },
       { m: "e2d3", san: "9.Bd3!", note: "— meets the same medicine: tempo on the queen, files for the rooks — and now your king is already castled while his never will be comfortable. A pawn for a permanent initiative, on even better terms than the mainline." },
     ],
     ledgerTitle: "After 6.Be2, how opponents continue",
@@ -1600,20 +1809,20 @@ const HOOVER = {
     C: "Castle long — the rook lands ON the target file in one move. Queen and rook stack against d6; e5 and Nd5 follow.",
   },
   dream: [
-    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
-    { m: "e7e5", san: "1...e5", chunk: "A", note: "" },
-    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "" },
-    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "" },
-    { m: "d2d4", san: "3.d4", chunk: "A", note: "" },
-    { m: "e5d4", san: "3...exd4", chunk: "A", note: "" },
-    { m: "f3d4", san: "4.Nxd4", chunk: "A", note: "" },
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He plays the main defense." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Develop and press e5." },
+    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "He holds the pawn." },
+    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The break — the same seven-ply overture as every Scotch pack. This one collects the fourth moves nobody writes books about." },
+    { m: "e5d4", san: "3...exd4", chunk: "A", note: "He takes." },
+    { m: "f3d4", san: "4.Nxd4", chunk: "A", note: "Recapture. Your knight now sits on the best square on the board — which is exactly why his next move tries to trade it off." },
     { m: "c6d4", san: "4...Nxd4?!", chunk: "B", note: "The 'simplify' instinct — trading his best-placed knight to unclutter. Say thank you." },
     { m: "d1d4", san: "5.Qxd4!", chunk: "B", anchor: true, note: "The free centralization.", why: { q: "Early queen development is a sin — why is this centralization free?", a: "The sin was always about TEMPO — knights saying 'move again.' He just traded the only knight that could ever hit d4; a later ...c5 kick costs him squares (d5, b5), not you time. Rules about queens are really rules about tempo: when the tempo can't be collected, the rule is suspended." } },
-    { m: "d7d6", san: "5...d6", chunk: "B", note: "Modest and standard: he shores up before developing." },
-    { m: "b1c3", san: "6.Nc3", chunk: "B", note: "" },
-    { m: "g8f6", san: "6...Nf6", chunk: "B", note: "" },
+    { m: "d7d6", san: "5...d6", chunk: "B", note: "Modest and standard — he shores up before developing, and the pawn he just placed on d6 becomes the patient your whole formation treats." },
+    { m: "b1c3", san: "6.Nc3", chunk: "B", note: "Develop toward the center, covering d5 and e4. The queen on d4 wants company, not protection." },
+    { m: "g8f6", san: "6...Nf6", chunk: "B", note: "His natural developer — and the piece your next move nails down." },
     { m: "c1g5", san: "7.Bg5!", chunk: "C", anchor: true, note: "The pin — f6 nailed to the queen. Every future e5/Nd5 idea gains a gear." },
-    { m: "f8e7", san: "7...Be7", chunk: "C", note: "Breaking the pin the standard way." },
+    { m: "f8e7", san: "7...Be7", chunk: "C", note: "Breaking the pin the standard way — and stepping into the formation you were heading for anyway." },
     { m: "e1c1,a1d1", san: "8.O-O-O!", chunk: "C", anchor: true, note: "The payoff — the Hoover formation.", why: { q: "Why castle LONG here?", a: "Because castling is artillery placement: the rook arrives on the d-file — the file with his backward d6 pawn — in a single move. Then the plan menu: the e5 break, Nd5, and the h4-h5 storm if he castles short. Choose your castle by where the rook is needed, not where the king feels cozy." } },
   ],
   promise: {
@@ -1631,8 +1840,8 @@ const HOOVER = {
     plies: [
       { m: "d8f6", san: "4...Qf6", note: "The tricky-looking sortie — d4 attacked, with ...Bc5 batteries against f2 in the air." },
       { m: "c1e3", san: "5.Be3!", note: "The move that pre-answers everything. (5.Nb5?? walks into ...Bc5! with mate threats on f2 — the one landmine in the whole Scotch: never unguard the c5–f2 diagonal here.)" },
-      { m: "f8c5", san: "5...Bc5", note: "" },
-      { m: "c2c3", san: "6.c3", note: "" },
+      { m: "f8c5", san: "5...Bc5", note: "The battery he was aiming for — and it is already answered, because the bishop got to e3 first." },
+      { m: "c2c3", san: "6.c3", note: "The same quiet holder as the Classical. Watch the next move closely." },
       { m: "g8e7", san: "6...Nge7", note: "Stop and look at the board: this is EXACTLY the Classical pack's mainline, reached through a different door. One tabiya, two move orders — this is how repertoires stop being exponential: branches merge." },
     ],
     ledgerTitle: "Minor 4th moves at club level",
@@ -1698,20 +1907,21 @@ const DECLINES = {
     C: "Without queens his king can't hide and his pawns can't unfork themselves: trade the bishops, double his e-pawns, then castle long — check included.",
   },
   dream: [
-    { m: "e2e4", san: "1.e4", chunk: "A", note: "" },
-    { m: "e7e5", san: "1...e5", chunk: "A", note: "" },
-    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "" },
-    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "" },
-    { m: "d2d4", san: "3.d4", chunk: "A", note: "" },
+    { m: "e2e4", san: "1.e4", chunk: "A", note: "The Open Game." },
+    { m: "e7e5", san: "1...e5", chunk: "A", note: "He answers in the center." },
+    { m: "g1f3", san: "2.Nf3", chunk: "A", note: "Develop and press e5." },
+    { m: "b8c6", san: "2...Nc6", chunk: "A", note: "The defender." },
+    { m: "d2d4", san: "3.d4", chunk: "A", anchor: true, note: "The break. Every other Scotch pack begins with him taking on d4 — this pack is what happens when he refuses." },
     { m: "d7d6", san: "3...d6?!", chunk: "A", note: "The decline — Philidor-flavored, solid-looking, and immediately worse. (3...exd4 is the main road: see the Mieses.)" },
-    { m: "d4e5", san: "4.dxe5", chunk: "B", note: "Collect the concession at once." },
-    { m: "d6e5", san: "4...dxe5", chunk: "B", note: "The natural pawn recapture. (4...Nxe5 is the accurate one — see Edge cases.)" },
+    { m: "d4e5", san: "4.dxe5", chunk: "B", note: "Collect the concession at once, before he can support the center with ...Nf6 or ...Bg4." },
+    { m: "d6e5", san: "4...dxe5", chunk: "B", note: "The natural recapture, and a real error — it clears the d-file with his queen still standing on it. The accurate 4...Nxe5 is the edge case." },
     { m: "d1d8", san: "5.Qxd8+!", chunk: "B", anchor: true, note: "The queens come off — as a weapon.", why: { q: "Trading queens on move five — isn't this drawish?", a: "Drawish for whom? He lost castling forever; you lost a piece that was blocking your rook's file. Positions called 'drawish' where one king is stuck in the crossfire are winning positions in slow motion. Evaluate every trade by what each side's REMAINING pieces want — yours want open files; his want their king anywhere else." } },
-    { m: "e8d8", san: "5...Kxd8", chunk: "B", note: "The king takes up residence. Permanent address." },
+    { m: "e8d8", san: "5...Kxd8", chunk: "B", note: "The only recapture that does not cost a pawn — and the king takes up a permanent address. Castling is gone for the rest of the game, in a position about to open. (The c6 knight can also take: 5...Nxd8? is a legal second option and a bad one — see the coverage line.)" },
     { m: "f1c4", san: "6.Bc4", chunk: "C", anchor: true, note: "The laser, queenless edition.", why: { q: "Why does this bishop matter MORE without queens?", a: "Because f7's only defender was always the king — and now the king has bodyguard duty on d8 with no queen to call for help. Piece values shift when defenders vanish: the fewer defenders a square has, the more every attacker of it is worth. f7 just became the most valuable square on the board." } },
-    { m: "c8e6", san: "6...Be6", chunk: "C", note: "The standard parry: block the diagonal, offer the trade." },
-    { m: "c4e6", san: "7.Bxe6", chunk: "C", note: "Accept — his recapture doubles his e-pawns permanently and gains him nothing." },
-    { m: "f7e6", san: "7...fxe6", chunk: "C", note: "" },
+    { m: "c8e6", san: "6...Be6", chunk: "C", note: "The standard parry — block the diagonal and offer the trade. He is relieved to swap his problem bishop; he should not be." },
+    { m: "c4e6", san: "7.Bxe6", chunk: "C", anchor: true, note: "Accept. His recapture doubles the e-pawns permanently and buys him nothing — this is the rare trade that makes your opponent's structure worse and your remaining pieces better.",
+      why: { q: "You just traded your best attacking piece. Why is that right?", a: "Because the bishop had already done its work: it forced the pawn onto e6, and the damage outlives the piece. Judge a trade by what it leaves behind, not by what it removes — you leave him doubled, isolated e-pawns and a king on d8 in front of an opening d-file. Attacking pieces buy structural damage; the damage is what wins the endgame, not the piece." } },
+    { m: "f7e6", san: "7...fxe6", chunk: "C", note: "Forced — recapturing with the pawn is the only move that holds the e-file together, and it doubles his pawns for the rest of the game." },
     { m: "b1c3", san: "8.Nc3", chunk: "C", note: "The payoff position: his e-pawns are doubled for life, his king is stuck on d8 — and your next move, O-O-O+, develops a rook WITH CHECK. (Not 8.Nxe5?? — the c6 knight guards that pawn. Count defenders before collecting.)" },
   ],
   promise: {
@@ -1727,8 +1937,8 @@ const DECLINES = {
     base: null, baseCount: 7,
     plies: [
       { m: "c6e5", san: "4...Nxe5", note: "The accurate recapture: keep the d-file contested one move longer." },
-      { m: "f3e5", san: "5.Nxe5", note: "" },
-      { m: "d6e5", san: "5...dxe5", note: "" },
+      { m: "f3e5", san: "5.Nxe5", note: "Take back immediately — leaving the knight on e5 lets him consolidate with ...Nf6 and ...Be7." },
+      { m: "d6e5", san: "5...dxe5", note: "Now the pawn recapture is forced — and the same skeleton appears, one trade deeper." },
       { m: "d1d8", san: "6.Qxd8+", note: "Same weapon —" },
       { m: "e8d8", san: "6...Kxd8", note: "— same address." },
       { m: "f1c4", san: "7.Bc4", note: "The identical skeleton, one trade deeper: king on d8, f7 tender, your development free. No pawn win this time — a permanent squeeze instead: Nc3, Be3, O-O-O, f4. Every trade he makes walks toward a worse endgame. This is the honest best-play version, and it's simply pleasant for White." },
@@ -1757,6 +1967,13 @@ const DECLINES = {
       { m: "e8d8", san: "6...Kxd8", note: "" },
       { m: "f1c4", san: "7.Bc4", note: "The identical skeleton one more time: king on d8, f7 tender, e-pawns split, your development free — and Stockfish already calls it +1.2. Three different declines, one punish. That is what a repertoire is." },
     ] },
+    { t: "5...Nxd8? — the other recapture.", baseCount: 9, plies: [
+      { m: "c6d8", san: "5...Nxd8?", note: "The knight takes instead of the king. It looks like the clever version — castling rights survive — and it drops a pawn on the spot." },
+      { m: "f3e5", san: "6.Nxe5!", note: "Collect. The knight on c6 was the ONLY defender of e5, and it just walked to d8 to capture; the pawn it was guarding fell the moment it left.",
+        why: { q: "Both recaptures look reasonable. Why is the knight's a whole pawn worse?", a: "Because a capture is also a departure. The knight on c6 was doing two jobs — it guarded e5 — and taking on d8 fires it from both. Before you recapture with a defender, ask what it stops defending: that is the whole difference between these two moves, and the same question decides recaptures for the rest of your chess life. The king had no second job, so the king takes." } },
+      { m: "f7f6", san: "6...f6", note: "Kicking the knight and blocking the diagonal — his most natural try, and it loosens the squares around his uncastled king." },
+      { m: "e5d3", san: "7.Nd3!", note: "Retreat to the useful square, not the natural one. From d3 the knight eyes e5, c5 and f4 and stays out of every ...f5/...Bc5 tempo; keeping the extra pawn matters more than looking active. His knight still sits on d8 blocking his own king, and castling never happened after all." },
+    ] },
     { t: "3...Nf6 — he counterattacks e4.", baseCount: 5, plies: [
       { m: "g8f6", san: "3...Nf6", note: "Petroff instincts a move too late: the center is already open." },
       { m: "d4e5", san: "4.dxe5!", note: "Take forward — his knight must jump into the fire to justify itself." },
@@ -1767,6 +1984,12 @@ const DECLINES = {
     ] },
   ],
   drills: [
+    { id: "dc5", kind: "move", danger: true,
+      moves: ["e2e4","e7e5","g1f3","b8c6","d2d4","d7d6","d4e5","d6e5","d1d8","c6d8"],
+      from: "f3", to: "e5",
+      prompt: "He recaptured with the knight instead of the king. Punish it.",
+      hints: ["The knight that took on d8 had another job. What was it guarding?", "Something is hanging in the center right now."],
+      reason: "6.Nxe5! — the c6 knight was e5's only defender, and it left. A clean pawn, and his knight is stranded on d8." },
     { id: "dc1", kind: "move", plyCount: 8, from: "d1", to: "d8",
       prompt: "He recaptured with the pawn. Use the file.",
       hints: ["What did his recapture just clear?", "The trade that costs HIM the rest of the game."],
@@ -2014,7 +2237,7 @@ const FAMILIES = [
   { id: "knights", rep: false, label: "🐴 Four Knights", blurb: "⚔ Off-repertoire: 3.Nc3 collides with your 3.d4 — and these two even collide with each other at move 4. Museum pieces with teeth." },
 ];
 
-const PACKS = [MIESES, CLASSICAL, STEINITZ, HOOVER, DECLINES, SCOTCH, GRECO, MOLLER, SPEAR, LANGE, FRIED, LEGAL, MIRROR, HALLO, ALIEN, MORRA, PETROFF, PHILIDOR, SCANDI, KPAWN, QPAWN, BUSCH];
+const PACKS = [MIESES, CLASSICAL, STEINITZ, HOOVER, DECLINES, SCOTCH, GRECO, MOLLER, SPEAR, LANGE, FRIED, LEGAL, MIRROR, HALLO, ALIEN, MORRA, PETROFF, RUSSIAN, PHILIDOR, HANHAM, SCANDI, KPAWN, QPAWN, BUSCH];
 
 
 
@@ -2187,6 +2410,42 @@ const EXTRAS = {
           { m: "d5b4", san: "9...Nb4?!" },
           { m: "a2a3", san: "10.a3!" } ],
         note: "Ask the jump to prove itself: the ...Nc2+ fork never existed, and a3 sends the knight to its only square — d5. Do NOT cash it with cxd5 (the a6 bishop x-rays e2 the moment c4 steps away); play g3 and Bg2 instead, and the knight becomes a target on a highway you own. (Not 10.Qe4? — the natural centralization loses the game to 10...d5!: the queen retreats, the center rolls, and ...Nc2 tricks follow for real.)" },
+    ],
+  },
+  russian: {
+    hints: {
+      A: "He evicts before he copies. Nothing tactical exists here — ask what the correct order costs him instead.",
+      B: "His knight is the most advanced piece on the board and the least useful. Develop straight at it.",
+      C: "Do not attack the knight. Attack the pawn that is the only thing holding it there.",
+    },
+    finalWhy: "No knockout exists against the Petroff, and pretending otherwise is how players lose to it. The futures show the two shapes the pull takes: chase the knight or pressure the pawn — both are pleasant, neither is forced.",
+    futures: [
+      { t: "He develops the bishop", moves: [
+          { m: "c8e6", san: "10...Be6" },
+          { m: "c1f4", san: "11.Bf4" } ],
+        note: "He shores up d5 with a piece, so you finish development and take the diagonal his bishop just left. Every piece is out, c4 still asks the question, and the b4 knight is offside — a comfortable game with a clear plan and no risk." },
+      { t: "He goes to the active square", moves: [
+          { m: "c8f5", san: "10...Bf5" },
+          { m: "a2a3", san: "11.a3" } ],
+        note: "The bishop is more active on f5, but it stopped defending d5 — so the knight on b4 gets kicked immediately and must go to the rim or come home. Tempo and structure, which is what this whole opening pays in." },
+    ],
+  },
+  hanham: {
+    hints: {
+      A: "He is building a shell, not a plan. Take the square that points at his weakest spot while he is still assembling.",
+      B: "You are three moves ahead in development against a position with no counterplay. Just finish.",
+      C: "Play against HIS plan. He has exactly one pawn break — find it and delete it.",
+    },
+    finalWhy: "The Hanham does not lose material, so the payoff is positional and permanent: no break, less space, a hole on b5. The futures show that the setup is move-order proof — Be3 is the move whatever he tries.",
+    futures: [
+      { t: "He makes luft", moves: [
+          { m: "h7h6", san: "9...h6" },
+          { m: "c1e3", san: "10.Be3" } ],
+        note: "A useful move in a position with nothing to do is still a move spent. You complete the ideal setup: Be3 eyes the queenside dark squares, Qd2 and Nd5 come next, and b5 is yours whenever you want it." },
+      { t: "He lines the queen up", moves: [
+          { m: "d8c7", san: "9...Qc7" },
+          { m: "c1e3", san: "10.Be3" } ],
+        note: "Same answer. Be3 is right against every Hanham setup because it develops, guards d4 and points at the queenside where his hole is — a setup you can play from memory of the SHAPE rather than the moves." },
     ],
   },
   scandi: {
@@ -2513,7 +2772,7 @@ const buildTree = (packIds, side = "white") => {
   return { REP: rep, REPX: repx, RUNS: buildRuns(packIds, repx), packIds, side, userPly };
 };
 const CORE_PACK_IDS = PACKS.filter((p) => p.family === "scotch").map((p) => p.id);
-const LEARNABLE_PACK_IDS = ["petroff", "philidor", "scandi", "alien"]; // shield packs learnable into the gauntlet
+const LEARNABLE_PACK_IDS = ["petroff", "russian", "philidor", "hanham", "scandi", "alien"]; // shield packs learnable into the gauntlet
 const BLACK_PACK_IDS = ["kpawn", "qpawn"]; // the Black repertoire (side: "black")
 const DEFAULT_TREE = buildTree(CORE_PACK_IDS);
 const REP = DEFAULT_TREE.REP, REPX = DEFAULT_TREE.REPX, RUNS = DEFAULT_TREE.RUNS;
@@ -2775,6 +3034,8 @@ function engineCore() {
     if(whitePOV<-31000) return {mate: -Math.ceil((32000+whitePOV)/2), d:lastD};
     return {cp: whitePOV, d: lastD};
   }
+  // is the side to move in `fen` in check? (drives the board's check sound)
+  function inCheck(fen){ parseFen(fen); return attacked(kingSq(stm), -stm); }
   // legal destination squares for the piece standing on `from` (0..63) in `fen`.
   // Drives the board's move hints — same perft-verified generator the search uses.
   function legalTargets(fen, from){
@@ -2792,21 +3053,117 @@ function engineCore() {
     for(var i=0;i<mv.length;i++){ if(make(mv[i])){ unmake(); out.push((mv[i]>>6)&63); } }
     return out;
   }
-  return { parseFen: parseFen, perft: perft, go: go, evalPos: evalPos, legalTargets: legalTargets, legalCaptureTargets: legalCaptureTargets };
+  return { parseFen: parseFen, perft: perft, go: go, evalPos: evalPos, inCheck: inCheck, legalTargets: legalTargets, legalCaptureTargets: legalCaptureTargets };
 }
 
-/* Move hints for the board: legal destinations of the selected piece, straight
-   from the perft-verified generator (one engine instance, reused). */
-const MOVE_HINTS = (() => {
-  let core = null;
-  return (fen, name) => {
-    if (!fen || !name) return [];
+/* One engine instance for the UI's rules questions — move hints and check. */
+const UI_ENGINE = (() => { let core = null; return () => (core = core || engineCore()); })();
+
+/* Legal destinations of the selected piece, straight from the perft-verified generator. */
+const MOVE_HINTS = (fen, name) => {
+  if (!fen || !name) return [];
+  try { return UI_ENGINE().legalTargets(fen, sq(name)).map(sqName); } catch (e) { return []; }
+};
+
+/* Does this position have the side to move in check? */
+const IN_CHECK = (fen) => {
+  if (!fen) return false;
+  try { return UI_ENGINE().inCheck(fen); } catch (e) { return false; }
+};
+
+/* ---------- sound ----------
+   Synthesized, not sampled: a handful of oscillators beats shipping audio files
+   into a PWA that must work offline, and it keeps the bundle honest. The context
+   is created lazily on the first move, which is always inside a user gesture. */
+const SOUND = (() => {
+  const KEY = "lines-sound-v1";
+  let ctx = null, on = true, tried = false;
+  const ready = STORE
+    ? STORE.get(KEY).then((v) => { if (v && v.value === "off") on = false; }).catch(() => {})
+    : Promise.resolve();
+  const audio = () => {
+    if (ctx) { if (ctx.state === "suspended") ctx.resume().catch(() => {}); return ctx; }
+    if (tried) return null;
+    tried = true;
     try {
-      if (!core) core = engineCore();
-      return core.legalTargets(fen, sq(name)).map(sqName);
-    } catch (e) { return []; }
+      const AC = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+      if (!AC) return null;
+      ctx = new AC();
+    } catch (e) { return null; }
+    return ctx;
   };
+  // a struck-wood thock: pitch drops as it decays, like a piece landing
+  const thock = (c, t, f, dur, gain, type, bend) => {
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || "triangle";
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, f * (bend == null ? 0.55 : bend)), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  };
+  // the contact transient — what makes a click read as wood rather than a beep
+  const tick = (c, t, dur, gain, hp) => {
+    const n = Math.max(1, Math.floor(c.sampleRate * dur));
+    const buf = c.createBuffer(1, n, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = "highpass"; f.frequency.value = hp;
+    const g = c.createGain();
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(c.destination);
+    src.start(t); src.stop(t + dur);
+  };
+  const api = {
+    isOn: () => on,
+    whenReady: () => ready,
+    toggle: async () => {
+      on = !on;
+      if (on) api.move("move", false); // confirm the setting audibly
+      try { if (STORE) await STORE.set(KEY, on ? "on" : "off"); } catch (e) {}
+      return on;
+    },
+    move: (kind, check) => {
+      if (!on) return;
+      const c = audio(); if (!c) return;
+      const t = c.currentTime + 0.001;
+      try {
+        if (kind === "capture") { tick(c, t, 0.07, 0.16, 900); thock(c, t, 150, 0.13, 0.24, "triangle", 0.45); }
+        else if (kind === "castle") { thock(c, t, 200, 0.07, 0.16); thock(c, t + 0.085, 190, 0.09, 0.2); }
+        else { tick(c, t, 0.03, 0.05, 2200); thock(c, t, 205, 0.09, 0.2); }
+        if (check) { thock(c, t + 0.05, 620, 0.06, 0.11, "square", 1); thock(c, t + 0.11, 930, 0.07, 0.1, "square", 1); }
+      } catch (e) {}
+    },
+    error: () => {
+      if (!on) return;
+      const c = audio(); if (!c) return;
+      try { thock(c, c.currentTime + 0.001, 150, 0.2, 0.16, "sawtooth", 0.8); } catch (e) {}
+    },
+  };
+  return api;
 })();
+
+/* castle beats capture beats quiet move; check is an extra blip on top */
+const moveKind = (tok, countBefore, countAfter) =>
+  (tok || "").indexOf(",") > -1 ? "castle" : countAfter < countBefore ? "capture" : "move";
+const pieceCount = (b) => { let n = 0; for (let i = 0; i < 64; i++) if (b[i]) n++; return n; };
+
+/* Sound the board when a new ply lands. Silent on mount — only transitions
+   make noise, so arriving mid-line or re-rendering never fires. */
+function useMoveSound(tok, k, pieces, fen) {
+  const prev = useRef(null);
+  useEffect(() => {
+    const id = k + "|" + (tok || "");
+    const was = prev.current;
+    prev.current = { id, count: pieceCount(pieces) };
+    if (!was || was.id === id || !tok) return;
+    SOUND.move(moveKind(tok, was.count, prev.current.count), IN_CHECK(fen));
+  }, [k, tok]);
+}
 
 const LOCAL_WORKER_MAIN = 'var FEN="";self.onmessage=function(e){var m=e.data;if(m==="uci"){self.postMessage("uciok");}else if(m.indexOf("position fen ")===0){FEN=m.slice(13);}else if(m.indexOf("go")===0){var ms=1150;var mm=m.match(/movetime (\\d+)/);if(mm)ms=parseInt(mm[1],10);var r=core.go(FEN,ms);var side=FEN.split(/\\s+/)[1];var v;var kind;if(r.mate!=null){kind="mate";v=side==="w"?r.mate:-r.mate;}else{kind="cp";v=side==="w"?r.cp:-r.cp;}self.postMessage("info depth "+r.d+" score "+kind+" "+v);self.postMessage("bestmove 0000");}};';
 
@@ -2957,6 +3314,11 @@ const EVAL = (() => {
   };
 })();
 
+const EVAL_CSS = "@keyframes linesEvalPulse{0%,100%{opacity:.5}50%{opacity:.9}}";
+const evalRead = (ev) => ev.mate != null
+  ? { pct: ev.mate > 0 ? 98 : 2, label: "#" + (ev.mate > 0 ? "+" : "−") + Math.abs(ev.mate) }
+  : { pct: 50 + 50 * Math.tanh((ev.cp / 100) / 4), label: (ev.cp >= 0 ? "+" : "") + (ev.cp / 100).toFixed(1) };
+
 function EvalBar({ pieces, hist, k }) {
   const [, force] = useState(0);
   useEffect(() => EVAL.subscribe(() => force((x) => x + 1)), []);
@@ -2964,21 +3326,37 @@ function EvalBar({ pieces, hist, k }) {
   useEffect(() => { EVAL.request(key, toFEN(pieces, hist, k), k % 2 === 0 ? "w" : "b"); }, [key]);
   const st = EVAL.getStatus();
   const ev = EVAL.get(key);
-  let pct = 50, label = "…";
-  if (ev) {
-    if (ev.mate != null) { pct = ev.mate > 0 ? 98 : 2; label = "#" + (ev.mate > 0 ? "+" : "−") + Math.abs(ev.mate); }
-    else { const pw = ev.cp / 100; pct = 50 + 50 * Math.tanh(pw / 4); label = (pw >= 0 ? "+" : "") + pw.toFixed(1); }
-  } else if (st === "offline") { label = "offline · " + EVAL.getStage(); }
+
+  // The engine takes a second per position. Blanking the bar to 50/50 while it
+  // thinks reads as "the game is level", which is a claim we haven't earned —
+  // so hold the last score we actually computed and mark it as stale instead.
+  // Only within one forward-running game: a new run (k back to 0) drops it.
+  const held = useRef(null);
+  if (ev) { const r = evalRead(ev); held.current = { k, pct: r.pct, label: r.label, d: ev.d, s: ev.s }; }
+  else if (held.current && k <= held.current.k) { held.current = null; }
+  const stale = !ev && held.current ? held.current : null;
+
+  const pct = ev ? evalRead(ev).pct : stale ? stale.pct : 50;
+  const fresh = ev ? evalRead(ev) : null;
+  let label, suffix = "", tone = C.muted;
+  if (fresh) { label = fresh.label; suffix = ` · d${ev.d}${ev.s === "loc" ? " local" : ""}`; tone = C.gold; }
+  else if (stale) { label = stale.label; suffix = " · ⟳"; tone = C.gold + "99"; }
+  else if (st === "offline") { label = "offline · " + EVAL.getStage(); }
   else if (st === "loading") { label = EVAL.getStage(); }
   else { label = "thinking…"; }
+
   return (
-    <div className="flex items-center gap-2">
-      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: C.muted, opacity: 0.75 }}>{ev && ev.s === "loc" ? "eng" : "SF"}</span>
-      <div className="flex-1 rounded" style={{ height: 9, background: "#221A13", overflow: "hidden", border: `1px solid ${C.line}` }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "#EDE6D6", transition: "width .5s" }} />
+    <div className="flex items-center gap-2" title={stale ? "last computed score — the engine is still thinking about this position" : undefined}>
+      <style>{EVAL_CSS}</style>
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: C.muted, opacity: 0.75 }}>{(ev || stale) && (ev ? ev.s : stale.s) === "loc" ? "eng" : "SF"}</span>
+      <div className="flex-1 rounded" style={{ height: 9, background: "#221A13", overflow: "hidden", border: `1px solid ${C.line}`, position: "relative" }}>
+        <div style={{
+          width: `${pct}%`, height: "100%", background: "#EDE6D6", transition: "width .5s",
+          animation: stale ? "linesEvalPulse 1.2s ease-in-out infinite" : "none",
+        }} />
       </div>
-      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: ev ? C.gold : C.muted, minWidth: 84, textAlign: "right" }}>
-        {label}{ev ? ` · d${ev.d}${ev.s === "loc" ? " local" : ""}` : ""}
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: tone, minWidth: 84, textAlign: "right" }}>
+        {label}{suffix}
       </span>
     </div>
   );
@@ -3088,8 +3466,10 @@ function FuturesPanel({ pack }) {
     );
   }
   const fut = ex.futures[fi];
-  const pieces = applyMoves([...baseMoves, ...fut.moves.slice(0, k).map((x) => x.m)]);
+  const futMoves = [...baseMoves, ...fut.moves.slice(0, k).map((x) => x.m)];
+  const pieces = applyMoves(futMoves);
   const last = k > 0 ? fromTo(fut.moves[k - 1].m) : finalLast;
+  useMoveSound(k > 0 ? fut.moves[k - 1].m : null, baseMoves.length + k, pieces, toFEN(pieces, futMoves, futMoves.length));
   const doneF = k === fut.moves.length;
   return (
     <div className="flex flex-col gap-3">
@@ -3200,6 +3580,7 @@ function ExplainWalk({ pack, onDrill, switchPack }) {
   const ply = D[si];
   const pieces = applyMoves(D.slice(0, si + 1).map((p) => p.m));
   const atLast = si === D.length - 1;
+  useMoveSound(ply.m, si, pieces, toFEN(pieces, D.slice(0, si + 1).map((p) => p.m), si + 1));
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -3280,7 +3661,7 @@ function FullDrill({ pack, go, onExplain }) {
   useEffect(() => {
     if (!done && !isUser(idx)) {
       const tm = setTimeout(() => {
-        setFlash("He plays " + D[idx].san + (D[idx].note ? " — " + D[idx].note.split(".")[0] + "." : ""));
+        setFlash("He plays " + D[idx].san + (D[idx].note ? " — " + firstSentence(D[idx].note) : ""));
         setIdx(idx + 1);
       }, 650);
       return () => clearTimeout(tm);
@@ -3318,12 +3699,13 @@ function FullDrill({ pack, go, onExplain }) {
     if (!sel) return;
     const [from, to] = fromTo(expected.m);
     if (sel === from && name === to) { advance(); }
-    else if (miss === 0) { setMiss(1); setMistakes(mistakes + 1); }
-    else { setMiss(2); setTimeout(advance, 900); }
+    else if (miss === 0) { SOUND.error(); setMiss(1); setMistakes(mistakes + 1); }
+    else { SOUND.error(); setMiss(2); setTimeout(advance, 900); }
     setSel(null);
   };
   const lastM = idx > 0 ? D[idx - 1].m : null;
   const fen = toFEN(pieces, D.slice(0, idx).map((p) => p.m), idx);
+  useMoveSound(lastM, idx, pieces, fen);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -3485,6 +3867,7 @@ function EdgeCases({ pack, go, switchPack }) {
   const pieces = applyMoves(applied);
   const lastM = applied[applied.length - 1];
   const fen = toFEN(pieces, applied, divergeIdx + t);
+  useMoveSound(lastM, divergeIdx + t, pieces, fen);
   const advance = () => { setT(t + 1); setSel(null); setMiss(0); };
   const tap = (name) => {
     if (waiting || !expected) return;
@@ -3493,8 +3876,8 @@ function EdgeCases({ pack, go, switchPack }) {
     if (!sel) return;
     const [from, to] = fromTo(expected.m);
     if (sel === from && name === to) { advance(); }
-    else if (miss === 0) { setMiss(1); setStumbles(stumbles + 1); }
-    else { setMiss(2); setTimeout(advance, 900); }
+    else if (miss === 0) { SOUND.error(); setMiss(1); setStumbles(stumbles + 1); }
+    else { SOUND.error(); setMiss(2); setTimeout(advance, 900); }
     setSel(null);
   };
   return (
@@ -3546,7 +3929,7 @@ const GKEY3 = "lines-gauntlet-v3"; // v6.3 memory model (H/last/relearn records)
 const TREEKEY = "lines-tree-v1";   // deprecated in v6.4 (learned LINES gate the gauntlet now); key left for old installs
 const CCUSER = "lines-cc-user";    // chess.com username
 const CCCACHE = "lines-cc-cache-v1"; // per-month cache of trimmed game records
-const APP_VER = "v6.6·git";
+const APP_VER = "v6.7·git";
 const SAVER = (() => {
   let t = null, last = null, status = "idle", lastAt = 0; // idle | saving | ok | fail
   const subs = new Set();
@@ -3947,6 +4330,9 @@ function Gauntlet({ onExit, onLearn }) {
     ? { m: cur.toks[k], san: cur.sans[k] || "" } : null;
   const expFT = expected ? fromTo(expected.m) : null;
 
+  const fen = toFEN(pieces, hist, k);
+  useMoveSound(lastTok, k, pieces, fen);
+
   const onTap = (name) => {
     if (!expected) return;
     const pc = pieces[sq(name)];
@@ -3964,6 +4350,7 @@ function Gauntlet({ onExit, onLearn }) {
     } else {
       const nm = miss + 1;
       setSel(null);
+      SOUND.error();
       if (nm === 1) {
         const wasOwned = owned(conf[key], Date.now());
         setMiss(1); setRunMisses((r) => r + 1);
@@ -4332,7 +4719,7 @@ function Gauntlet({ onExit, onLearn }) {
         </div>
       )}
       <EvalBar pieces={pieces} hist={hist} k={k} />
-      <Board flip={up === 1} pieces={pieces} last={lastTok ? fromTo(lastTok) : null} sel={sel} fen={toFEN(pieces, hist, k)}
+      <Board flip={up === 1} pieces={pieces} last={lastTok ? fromTo(lastTok) : null} sel={sel} fen={fen}
         marks={miss === 1 && expFT ? [expFT[0]] : []}
         onTap={onTap} frame={null} />
       <div className="flex gap-3">
@@ -4356,7 +4743,7 @@ function Gauntlet({ onExit, onLearn }) {
 }
 
 /* ============ LEARN — walk a line with its story, then prove it from memory ============ */
-function LineStudy({ run, onExit }) {
+function LineStudy({ run, onExit, nextRun, onNext, learnedN, totalN }) {
   const pack = PACKS.find((q) => q.id === run.packId) || {};
   const doc = useMemo(() => buildLineDoc(pack, EXTRAS[run.packId] || {}, run, { sq, posKey, START }), [run.sig]);
   const toks = run.toks;
@@ -4369,6 +4756,8 @@ function LineStudy({ run, onExit }) {
   const [miss, setMiss] = useState(0);
   const [slips, setSlips] = useState(0);
   const [msg, setMsg] = useState(null);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
 
   const wPieces = useMemo(() => applyMoves(toks.slice(0, wi)), [wi]);
   const lastW = wi > 0 ? fromTo(toks[wi - 1].split(",")[0]) : null;
@@ -4407,8 +4796,25 @@ function LineStudy({ run, onExit }) {
       else { setMiss(0); setMsg(`It was ${expected.san} — shown. Finish the line, then walk it again or retry.`); setHist((h) => [...h, expected.m]); }
     }
   };
-  const startTry = () => { LEARN.markWalked(run.sig); TEL.log("learn_walk", { run: run.id, side: run.side }); setHist([]); setSel(null); setMiss(0); setSlips(0); setMsg(null); setMode("try"); };
-  const restartWalk = () => { setWi(0); setMode("walk"); };
+  const startTry = () => { LEARN.markWalked(run.sig); TEL.log("learn_walk", { run: run.id, side: run.side }); setPlaying(false); setHist([]); setSel(null); setMiss(0); setSlips(0); setMsg(null); setMode("try"); };
+  const restartWalk = () => { setWi(0); setPlaying(false); setMode("walk"); };
+  const step = (to) => { setPlaying(false); setWi(to); };
+
+  // Autoplay dwells on each move for as long as there is to read on it — a bare
+  // "1.e4" should not sit as long as a why-block. Manual stepping stops it.
+  const dwellFor = (pl) => Math.min(3600, 850 + ((pl && pl.note ? pl.note.length : 0) + (pl && pl.why ? 90 : 0)) * 15) / speed;
+  useEffect(() => {
+    if (mode !== "walk" || !playing || atEnd) return;
+    const t = setTimeout(() => setWi((x) => x + 1), wi === 0 ? 420 : dwellFor(cur));
+    return () => clearTimeout(t);
+  }, [mode, playing, wi, atEnd]);
+  useEffect(() => { if (atEnd) setPlaying(false); }, [atEnd]);
+
+  // the board speaks in both phases: walking a line and playing it from memory
+  const sndTok = mode === "walk" ? (wi > 0 ? toks[wi - 1] : null) : (hist.length ? hist[hist.length - 1] : null);
+  const sndPieces = mode === "walk" ? wPieces : tPieces;
+  const sndHist = mode === "walk" ? toks.slice(0, wi) : hist;
+  useMoveSound(sndTok, mode + ":" + (mode === "walk" ? wi : hist.length), sndPieces, toFEN(sndPieces, sndHist, sndHist.length));
 
   const Note = ({ pl }) => (
     <div className="rounded-md p-3 flex flex-col gap-1.5" style={{ background: C.card, border: `1px solid ${C.line}`, minHeight: 64 }}>
@@ -4439,8 +4845,22 @@ function LineStudy({ run, onExit }) {
         {!atEnd ? (<>
           <Note pl={cur} />
           <div className="flex gap-2">
-            <Btn tone="ghost" onClick={() => setWi(Math.max(0, wi - 1))}>‹</Btn>
-            <div className="flex-1"><Btn full onClick={() => setWi(wi + 1)}>{wi === 0 ? "Begin —" : ""} next move ›</Btn></div>
+            <Btn tone="ghost" onClick={() => step(Math.max(0, wi - 1))}>‹</Btn>
+            <div className="flex-1">
+              <Btn full tone={playing ? "ghost" : "gold"} onClick={() => setPlaying(!playing)}>
+                {playing ? "⏸ Pause" : wi === 0 ? "▶ Play the line" : "▶ Play from here"}
+              </Btn>
+            </div>
+            <Btn tone="ghost" onClick={() => step(wi + 1)}>›</Btn>
+            <button onClick={() => setSpeed(speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1)}
+              title="Playback speed"
+              className="px-2 rounded-md"
+              style={{ background: C.card, border: `1px solid ${C.line}`, color: speed === 1 ? C.muted : C.gold, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, minWidth: 42 }}>
+              {speed}×
+            </button>
+          </div>
+          <div style={{ height: 3, background: C.card, borderRadius: 2 }}>
+            <div style={{ width: (wi / toks.length) * 100 + "%", height: 3, background: playing ? C.gold : C.line, borderRadius: 2, transition: "width .35s" }} />
           </div>
         </>) : (<>
           <EvalBar pieces={wPieces} hist={toks} k={wi} />
@@ -4475,7 +4895,20 @@ function LineStudy({ run, onExit }) {
             {run.id} is in your daily gauntlet from today. Learning opened the door — ownership comes from spaced recall there, and only the gauntlet writes memory.
           </p>
         </div>
-        <Btn full onClick={onExit}>← Learn another line</Btn>
+        {typeof learnedN === "number" && (
+          <div className="flex items-center gap-2">
+            <div className="flex-1" style={{ height: 4, background: C.card, borderRadius: 2 }}>
+              <div style={{ width: (learnedN / totalN) * 100 + "%", height: 4, background: C.gold, borderRadius: 2, transition: "width .4s" }} />
+            </div>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: C.muted }}>{learnedN}/{totalN} learned</span>
+          </div>
+        )}
+        {nextRun && onNext ? (<>
+          <Btn full onClick={() => onNext(nextRun)}>▶ Next: {nextRun.id} — {nextRun.label.length > 30 ? nextRun.label.slice(0, 30) + "…" : nextRun.label}</Btn>
+          <Btn full tone="ghost" onClick={onExit}>← Back to the list</Btn>
+        </>) : (
+          <Btn full onClick={onExit}>← Learn another line</Btn>
+        )}
       </>)}
 
       {mode === "failed" && (<>
@@ -4486,6 +4919,9 @@ function LineStudy({ run, onExit }) {
         </div>
         <Btn full onClick={startTry}>⟳ Try again</Btn>
         <Btn full tone="ghost" onClick={restartWalk}>↺ Walk it again</Btn>
+        {nextRun && onNext
+          ? <Btn full tone="ghost" onClick={() => onNext(nextRun)}>↷ Park it — next line instead</Btn>
+          : null}
         <Btn full tone="ghost" onClick={onExit}>← Back to the list</Btn>
       </>)}
     </div>
@@ -4501,7 +4937,19 @@ function LearnPage({ onOpenPack }) {
   useEffect(() => { (async () => { try { const m = STORE && (await STORE.get(GKEY3)); if (m && m.value) setMem(JSON.parse(m.value).mem || {}); } catch (e) {} })(); }, []);
   const [study, setStudy] = useState(null);
   const clusters = useMemo(() => buildClusters(PACKS, FULL_TREE, FULL_TREE_B, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS), []);
-  if (study) return <LineStudy key={study.sig} run={study} onExit={() => setStudy(null)} />;
+  if (study) {
+    const ls0 = LEARN.state();
+    const gs0 = GAMESTATS.res();
+    const queue = learnNext(ALL_RUNS, ls0, gs0 && gs0.runProb).filter((r) => r.sig !== study.sig);
+    return (
+      <LineStudy key={study.sig} run={study}
+        onExit={() => setStudy(null)}
+        nextRun={queue[0]}
+        onNext={(r) => setStudy(r)}
+        learnedN={ALL_RUNS.filter((r) => ls0.learned[r.sig]).length}
+        totalN={ALL_RUNS.length} />
+    );
+  }
 
   const GS = GAMESTATS.res();
   const ls = LEARN.state();
@@ -4744,6 +5192,8 @@ export default function LinesMock() {
     document.addEventListener("visibilitychange", onHide);
     return () => document.removeEventListener("visibilitychange", onHide);
   }, []);
+  const [snd, setSnd] = useState(SOUND.isOn());
+  useEffect(() => { SOUND.whenReady().then(() => setSnd(SOUND.isOn())); }, []);
   const [packId, setPackId] = useState("mieses");
   const [fam, setFam] = useState("scotch");
   const [tab, setTab] = useState("end");
@@ -4837,9 +5287,18 @@ export default function LinesMock() {
           {view === "packs" && tab === "end" && <EndScreen key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "learn" && <LearnFlow key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
           {view === "packs" && tab === "edge" && <EdgeCases key={packId} pack={pack} go={setTab} switchPack={switchPack} />}
-          <p className="pt-6" style={{ fontSize: 11, color: C.muted, opacity: 0.7 }}>
-            UX prototype {APP_VER} — lines SEE-audited · evals: real on-device search · Stockfish auto-engages outside this sandbox.
-          </p>
+          <div className="pt-6 flex items-center gap-2" style={{ paddingLeft: view === "packs" ? 0 : 20, paddingRight: view === "packs" ? 0 : 20 }}>
+            <button onClick={async () => setSnd(await SOUND.toggle())}
+              aria-label={snd ? "Mute move sounds" : "Unmute move sounds"}
+              title={snd ? "Move sounds on — tap to mute" : "Move sounds off — tap to unmute"}
+              className="px-2 py-1 rounded"
+              style={{ background: "transparent", border: `1px solid ${C.line}`, color: snd ? C.gold : C.muted, fontSize: 12, flexShrink: 0 }}>
+              {snd ? "🔊" : "🔇"}
+            </button>
+            <p style={{ fontSize: 11, color: C.muted, opacity: 0.7, margin: 0 }}>
+              UX prototype {APP_VER} — lines SEE-audited · evals: real on-device search · Stockfish auto-engages outside this sandbox.
+            </p>
+          </div>
         </main>
         {view === "packs" && (
         <nav className="fixed bottom-0 left-0 right-0" style={{ background: C.surface, borderTop: `1px solid ${C.line}` }}>
@@ -4863,4 +5322,4 @@ export default function LinesMock() {
 }
 
 /* ---------- test exports (tools/*.mjs) — export-only edit, no behavior change ---------- */
-export { engineCore, sqName, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS };
+export { engineCore, sqName, moveKind, pieceCount, evalRead, PACKS, EXTRAS, REP, REPX, RUNS, START, sq, posKey, applyMoves, toFEN, APP_VER, CONF, dayInfo, daySeedOrder, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS };

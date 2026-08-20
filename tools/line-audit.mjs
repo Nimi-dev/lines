@@ -5,6 +5,7 @@
 // treated as errors: a common master move is book, not a blunder.
 // Usage: node tools/line-audit.mjs [--ms 2500] [--threshold 70] [--masters]
 import { loadApp } from "./_load.mjs";
+import { createRequire } from "node:module";
 
 const { engineCore, START, sq, posKey, toFEN, PACKS, buildTree, CORE_PACK_IDS, LEARNABLE_PACK_IDS, BLACK_PACK_IDS } = await loadApp();
 
@@ -26,6 +27,52 @@ const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf("--" + name); return i >= 0 ? +args[i + 1] : dflt; };
 const MS = opt("ms", 2500), THRESHOLD = opt("threshold", 70), MASTERS = args.includes("--masters");
 const CLOUD = args.includes("--cloud"); // arbitrate every position with Lichess cloud Stockfish (deep) — the local engine misses deep refutations (10.Qe4? was Δ40 "clear" locally and −344cp at depth 23)
+const SF = args.includes("--sf"), DEPTH = opt("depth", 20); // local Stockfish (npm i -D stockfish) — deep, offline, no rate limit
+
+/* The strongest arbiter available wins: sf > cloud > the in-app engineCore.
+   engineCore is NOT an arbiter — it reaches ~depth 7 and cleared 10.Qe4? at
+   Δ40 when the truth was −344cp at depth 23. */
+const sfEngine = await (async () => {
+  if (!SF) return null;
+  try {
+    const require = createRequire(import.meta.url);
+    const engine = await require("stockfish")("lite-single");
+    const realWrite = process.stdout.write.bind(process.stdout);
+    let onLine = null;
+    const isUci = (t) => /^(info\b|bestmove\b|Stockfish \d|id \w|option name|uciok|readyok)/.test(t.trimStart());
+    process.stdout.write = (chunk) => {
+      const t = String(chunk);
+      if (!isUci(t)) return realWrite(chunk);
+      if (onLine) onLine(t);
+      return true;
+    };
+    const evalFen = (fen) => new Promise((resolve) => {
+      let score = null;
+      onLine = (t) => {
+        const m = t.match(/^info .*\bdepth (\d+)\b.*\bscore (cp|mate) (-?\d+)/);
+        if (m && +m[1] >= DEPTH) score = m[2] === "mate" ? { mate: +m[3] } : { cp: +m[3] };
+        if (/^bestmove/.test(t)) resolve(score);
+      };
+      engine.sendCommand("ucinewgame");
+      engine.sendCommand("position fen " + fen);
+      engine.sendCommand("go depth " + DEPTH);
+    });
+    return {
+      // UCI reports side-to-move POV; this audit works in White POV
+      eval: async (fen) => {
+        const r = await evalFen(fen);
+        if (!r) return null;
+        const w = fen.split(/\s+/)[1] === "w" ? 1 : -1;
+        return r.mate != null ? { mate: r.mate * w } : { cp: r.cp * w };
+      },
+      close: () => { process.stdout.write = realWrite; },
+    };
+  } catch (e) {
+    console.error(`--sf requested but the stockfish package is unavailable (${e.message}).`);
+    console.error("Install it with:  npm i -D stockfish     (optional; without it the audit falls back to the weak local engine)");
+    process.exit(1);
+  }
+})();
 
 const applyTok = (b, m) => { const nb = b.slice(); for (const g of m.split(",")) { const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4)); nb[t] = nb[f]; nb[f] = null; } return nb; };
 const cp = (r) => (r.mate != null ? (r.mate > 0 ? 30000 - r.mate : -30000 - r.mate) : r.cp);
@@ -74,7 +121,11 @@ for (const [key, pos] of seen) {
   const after = applyTok(pos.b, pos.m);
   const fenAfter = toFEN(after, [...pos.hist, pos.m], pos.k + 1);
   let evalBefore, evalAfter, src = "local";
-  if (CLOUD) {
+  if (sfEngine) {
+    const b = await sfEngine.eval(fenBefore), a = await sfEngine.eval(fenAfter);
+    if (b && a) { evalBefore = cp(b); evalAfter = cp(a); src = "sf d" + DEPTH; }
+  }
+  if (evalBefore == null && CLOUD) {
     const cb = await cloudEval(fenBefore, 3);
     if (cb) {
       evalBefore = cb.pvs[0].cp;
@@ -99,6 +150,9 @@ for (const [key, pos] of seen) {
 console.log("");
 
 const clean2 = (x) => x; // keep key format literal: packId|san
+if (sfEngine) sfEngine.close();
+if (!SF && !CLOUD) console.log("\nNOTE: local engineCore only (~depth 7) — not an arbiter. Re-run with --sf (local Stockfish) or --cloud before shipping content.");
+
 const allFlagged = results.filter((r) => r.delta > THRESHOLD).sort((a, b) => b.delta - a.delta);
 const waivedFlags = allFlagged.filter((r) => LINE_WAIVERS[r.packId + "|" + r.san]);
 const flagged = allFlagged.filter((r) => !LINE_WAIVERS[r.packId + "|" + r.san]);

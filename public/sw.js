@@ -1,4 +1,4 @@
-const CACHE = "lines-v6-6-git";
+const CACHE = "lines-v6-7-git";
 const ASSETS = ["./", "index.html", "styles.css", "manifest.json", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "pieces/kl.svg", "pieces/kd.svg", "pieces/ql.svg", "pieces/qd.svg", "pieces/rl.svg", "pieces/rd.svg", "pieces/bl.svg", "pieces/bd.svg", "pieces/nl.svg", "pieces/nd.svg", "pieces/pl.svg", "pieces/pd.svg"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
