@@ -35,6 +35,10 @@ const LINE_WAIVERS = {
   "petroff|7.d4": "queen-up (+4.6) — engine 'prefers' 7.Qd1 by 66cp of +5.2; development kept over retreat",
   "petroff|7.Qd1!": "queen-up (+4.9) — engine 'prefers' 7.d4 by 47cp of +5.4; the consolidation lesson kept (mirror of the 7.d4 waiver: at +5 the engine's ordering is noise)",
   // — black-side keeps —
+  "morra|2.d4!?": "the gambit's front door — chosen weapon per the coverage policy",
+  "morra|3.c3!": "the gambit proper: SF prefers 3.Nf3 (+26 vs -15) — a knowing, labeled practical weapon like the Alien; the danger line covers declines",
+  "morra|10.Nxf7": "the pack's fork payoff; SF prefers 10.Bxf7+ (+137 vs +16) at d18 — chosen-weapon keep, flagged for a content-revision brief",
+  "kpawn|2...Bc5!": "KGD decline: accepting is 52cp 'better' and twenty moves of theory; declining is solid and carries the built-in 3.fxe5?? Qh4+! refutation — the pack's own why-block documents this choice",
   "kpawn|7...b5!": "keeps -341 of -433 — the classic piece-winning fork, simplest to teach; SF's alternative is more crushing but needlessly complex",
 };
 

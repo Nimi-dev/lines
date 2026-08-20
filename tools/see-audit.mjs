@@ -96,6 +96,8 @@ const SEE_WAIVERS = {
     "Stockfish 18 d16: the engine's OWN top move at +1.68 — 7...Kxf7 is forced and 8.Qxd8 collects the queen. Static exchange cannot see a one-move-delayed regain. Waived 2026-08-19.",
   "hanham|9.Qd2!":
     "Stockfish 18 d16: top move at +1.74 and the only one that holds — the queen blocks the check and is offered back on White's terms (9.c3?? +0.01, 9.Bd2?? -0.02); after 9...Bxd2+, 10.Nxd2 +1.58. Waived 2026-08-19.",
+  "morra|7.e5!":
+    "The Morra trap's spring: 7.e5! offers the pawn to open the d-file against the queen — 7...dxe5 8.Qxd8+ Kxd8 9.Ng5! and f7 falls with the fork. Pack-documented, engine-verified sequence; the pawn returns with interest. Waived 2026-08-20.",
   "qpawn|2...c5!":
     "SF d55: dead equal and SF's own top choice — the c5 pawn is only nominally capturable (3.dxc5 e6!/...Qa5+ regains it by force); one-move-delayed regains are beyond static exchange. Waived 2026-08-19.",
   "alien|6.Nxf7!!":

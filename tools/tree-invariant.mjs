@@ -41,6 +41,7 @@ function checkSide(label, packIds, side) {
         userMove[key] = { m, packId: L.packId, san, line: L.name };
       }
       for (const g of m.split(",")) {
+        assert.ok(/^[a-h][1-8][a-h][1-8]$/.test(g), `malformed token '${g}' in ${L.packId}/${L.name} ply ${k} — annotations belong in san, never in m`);
         const f = sq(g.slice(0, 2)), t = sq(g.slice(2, 4));
         const pc = b[f];
         assert.ok(pc, `empty from-square in ${L.packId}/${L.name} ply ${k}: ${san || m} (${g})`);
