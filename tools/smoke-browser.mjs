@@ -48,9 +48,13 @@ const tapSquare = async (name, flip = false) => {
 
 await page.goto("http://localhost:4189/", { waitUntil: "networkidle0" });
 step("app renders", await hasText("lines"));
-step("footer stamps v6.6·git", await hasText("v6.6·git"));
+step("footer stamps v6.7·git", await hasText("v6.7·git"));
 step("Learn is the default page", await hasText("one line at a time"));
-step("learned counter starts 0/41", await hasText("0/41 learned"));
+const totalLines = await page.evaluate(() => {
+  const m = document.body.innerText.match(/0\/(\d+) learned/);
+  return m ? +m[1] : 0;
+});
+step(`learned counter starts 0/${totalLines} (count-agnostic)`, totalLines >= 40);
 step("Black section renders defenses", await hasText("YOUR DEFENSES"));
 
 // Practice before anything is learned → empty-state gate
@@ -96,7 +100,7 @@ step("passing hands straight to the next line", await page.evaluate(() => [...do
 step("verdict shows queue progress", await hasText("learned"));
 await clickByText("← Back to the list");
 await new Promise((r) => setTimeout(r, 400));
-step("learned counter now 1/41", await hasText("1/41 learned"));
+step("learned counter now 1/N", await hasText(`1/${totalLines} learned`));
 
 // learn a BLACK line: VSD·1, the anti-London bite (flipped board)
 await clickByText("VSD·1");
@@ -117,7 +121,7 @@ await new Promise((r) => setTimeout(r, 900));
 step("black clean try marks learned", await hasText("✓ Learned"));
 await clickByText("← Back to the list");
 await new Promise((r) => setTimeout(r, 400));
-step("learned counter now 2/41", await hasText("2/41 learned"));
+step("learned counter now 2/N", await hasText(`2/${totalLines} learned`));
 
 // the learned lines are in today's practice session
 await clickByText("⚡ Practice");
